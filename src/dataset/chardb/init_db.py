@@ -6,12 +6,13 @@ DB_FILE = "chardb.sqlite"
 CJK_RANGE = range(0x4E00, 0xA000)
 
 # Create a database connection and table
+
 def create_database():
-    # Connect to the SQLite database (or create it if it doesn't exist)
+    """Create the necessary tables: characters, fonts, and font_support."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
 
-    # Create a table for storing Chinese characters with their radicals
+    # Create the characters table if not exists
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS characters (
@@ -22,7 +23,31 @@ def create_database():
         """
     )
 
-    # Commit changes and close the connection
+    # Create the fonts table if not exists
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fonts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename TEXT UNIQUE NOT NULL
+        )
+        """
+    )
+
+    # Create the font_support table if not exists
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS font_support (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            character_id INTEGER NOT NULL,
+            font_id INTEGER NOT NULL,
+            query_character TEXT NOT NULL,
+            FOREIGN KEY (character_id) REFERENCES characters (id),
+            FOREIGN KEY (font_id) REFERENCES fonts (id),
+            UNIQUE(character_id, font_id, query_character)
+        )
+        """
+    )
+
     conn.commit()
     conn.close()
 

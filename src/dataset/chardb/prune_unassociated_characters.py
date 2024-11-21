@@ -11,8 +11,8 @@ def remove_unassociated_characters():
     cursor.execute(
         """
         DELETE FROM characters
-        WHERE character NOT IN (
-            SELECT DISTINCT character
+        WHERE id NOT IN (
+            SELECT DISTINCT character_id
             FROM font_support
         )
         """

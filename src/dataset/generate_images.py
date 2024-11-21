@@ -3,6 +3,7 @@ import random
 import sqlite3
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import numpy as np
+from numpy.f2py.auxfuncs import throw_error
 
 # generation params
 
@@ -28,16 +29,84 @@ cursor = conn.cursor()
 
 # character extraction
 
-def extract_character():
-    while True:
-        # Generate a random character from the CJK Unified Ideographs range
-        char = chr(random.randint(0x4E00, 0x9FFF))
+def extract_random_font():
+    # Check if the fonts table is empty
+    cursor.execute("SELECT COUNT(*) FROM fonts")
+    fonts_count = cursor.fetchone()[0]
+    if fonts_count == 0:
+        conn.close()
+        raise AssertionError("Empty fonts table")
+    random_offset = random.randint(0, fonts_count - 1)
+    query = """
+        SELECT id, filename 
+        FROM fonts
+        LIMIT 1 OFFSET ?
+    """
+    cursor.execute(query, (random_offset,))
+    row = cursor.fetchone()
+    return {"id": row[0], "filename": row[1]}
 
-        # Get the list of fonts that support this character
-        supported_fonts = font_support_map.get(char, [])
-        if supported_fonts:
-            radical = get_character_radical(char)
-            return char, radical, random.choice(supported_fonts)
+
+def extract_character(font=None):
+    """
+       Extract a random character. Optionally filter by a specific font.
+
+       Args:
+           font (dict, optional): A dictionary containing the font's 'id' and 'filename'.
+                                  If provided, only characters associated with this font
+                                  will be considered.
+
+       Returns:
+           tuple: (character, radical, font, query_character)
+       """
+    if font:
+        cursor.execute(
+            "SELECT COUNT(*) FROM font_support WHERE font_id = ?",
+            (font["id"],)
+        )
+    else:
+        cursor.execute("SELECT COUNT(*) FROM font_support")
+
+    count = cursor.fetchone()[0]
+    if count == 0:
+        conn.close()
+        raise AssertionError("No entries found in font_support table for the given criteria")
+
+    # Get a random offset
+    random_offset = random.randint(0, count - 1)
+
+    query = """
+            SELECT 
+                fs.id, 
+                c.character, 
+                f.filename AS font, 
+                fs.query_character, 
+                c.radical
+            FROM font_support fs
+            INNER JOIN characters c ON fs.character_id = c.id
+            INNER JOIN fonts f ON fs.font_id = f.id
+        """
+
+    parameters = []
+
+    if font:
+        query += """
+        WHERE fs.font_id = ?
+        """
+        parameters = [font["id"]]
+
+    query += """
+        LIMIT 1 OFFSET ?
+    """
+
+    parameters.append(random_offset)
+
+    cursor.execute(query, parameters)
+
+    row = cursor.fetchone()
+    columns = [desc[0] for desc in cursor.description]
+    row_dict = dict(zip(columns, row))
+    return row_dict["character"], row_dict["radical"], row_dict["font"], row_dict["query_character"]
 
 
 def augment_image(image):
@@ -54,6 +123,33 @@ def augment_image(image):
         image = Image.fromarray(np_image.astype('uint8'))
     return image
 
+
+# generate char image
+
+def generate_random_char_image(font_size, font=None):
+    char, radical, font_filename, query = extract_character(font)
+    font_path = os.path.join(FONTS_DIR, font_filename)
+    font = ImageFont.truetype(font_path, font_size)
+
+    canvas_size = font_size * 3  # initial blank canvas larger than necessary
+    char_image = Image.new("RGBA", (canvas_size, canvas_size), color=0)
+    char_draw = ImageDraw.Draw(char_image)
+
+    # Calculate text dimensions
+    text_bbox = char_draw.textbbox((0, 0), query, font=font)
+    text_width = text_bbox[2] - text_bbox[0]
+    text_height = text_bbox[3] - text_bbox[1]
+
+    # Center the text within the canvas
+    x_offset = (canvas_size - text_width) // 2 - text_bbox[0]
+    y_offset = (canvas_size - text_height) // 2 - text_bbox[1]
+
+    char_draw.text((x_offset, y_offset), query, font=font, fill="black")
+
+    char_image = char_image.crop(char_image.getbbox())
+    return char_image, char, radical, font_filename
+
+
 # character arrangment
 
 def check_overlap(bbox, bboxes):
@@ -64,156 +160,148 @@ def check_overlap(bbox, bboxes):
     return False
 
 
-def place_characters(canvas, draw, num_chars, char_images, bboxes, annotations):
-    """
-    Places characters on the canvas in priority:
-    1. Vertical arrangements
-    2. Square arrangements
-    3. Random single placements
-    """
-    def check_group_overlap(group_bboxes):
-        """Check if a group of bounding boxes overlaps with any existing boxes."""
-        for bbox in group_bboxes:
-            if check_overlap(bbox, bboxes):
-                return True
-        return False
+def check_group_overlap(group_bboxes, bboxes):
+    """Check if a group of bounding boxes overlaps with any existing boxes."""
+    for bbox in group_bboxes:
+        if check_overlap(bbox, bboxes):
+            return True
+    return False
 
-    def place_vertical_arrangement():
-        """Places a vertical arrangement of characters."""
-        placed = False
-        attempts = 0
-        while not placed and attempts < 100:
-            num_vertical = random.randint(2, min(6, len(char_images)))  # Random vertical group size
-            group_bboxes = []
-            group_annotations = []
-            total_height = sum(char_images[i].height for i in range(num_vertical))
-            max_width = max(char_images[i].width for i in range(num_vertical))
-            start_x = random.randint(0, CANVAS_SIZE[0] - max_width)
-            start_y = random.randint(0, CANVAS_SIZE[1] - total_height)
-            y = start_y
 
-            for i in range(num_vertical):
-                char_image = char_images[i]
-                bbox = (start_x, y, start_x + char_image.width, y + char_image.height)
-                group_bboxes.append(bbox)
-                center_x = (bbox[0] + bbox[2]) / 2
-                center_y = (bbox[1] + bbox[3]) / 2
-                group_annotations.append(
-                    f"{char_image.char} {center_x} {center_y} {char_image.width} {char_image.height}"
-                )
-                y += char_image.height
+# TODO: FINISH VERTICAL ARRANGEMENT, UNIFY SPACING AND MARGIN FOR ALL PLACEMENTS, TIDY UP CODE, ADD BACKGROUND IMAGES, VISUALIZE AND STABILIZE CHAR PROBABILITY DISTRIBUTION
 
-            if not check_group_overlap(group_bboxes):
-                for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images[:num_vertical]):
-                    bboxes.append(bbox)
-                    annotations.append(annotation)
-                    canvas.paste(char_image.image, (bbox[0], bbox[1]), char_image.image)
-                del char_images[:num_vertical]
-                placed = True
-            attempts += 1
+def place_vertical_arrangement(canvas, bboxes, annotations, spacing=0.2, margin=10):
+    """Places a vertical arrangement of characters."""
+    placed = False
+    attempts = 0
+    while not placed and attempts < 100:
+        num_vertical = random.randint(2, min(6, len(char_images)))  # Random vertical group size
+        group_bboxes = []
+        group_annotations = []
+        total_height = sum(char_images[i].height for i in range(num_vertical))
+        max_width = max(char_images[i].width for i in range(num_vertical))
+        start_x = random.randint(0, CANVAS_SIZE[0] - max_width)
+        start_y = random.randint(0, CANVAS_SIZE[1] - total_height)
+        y = start_y
 
-    def place_square_arrangement():
-        """Places characters in a square arrangement."""
-        placed = False
-        attempts = 0
-        while not placed and attempts < 100:
-            if len(char_images) < 4:
-                return False  # Need at least 4 characters for a square
-            square_size = char_images[0].width  # Assume equal sizes
-            group_bboxes = []
-            group_annotations = []
+        for i in range(num_vertical):
+            char_image = char_images[i]
+            bbox = (start_x, y, start_x + char_image.width, y + char_image.height)
+            group_bboxes.append(bbox)
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            group_annotations.append(
+                f"{char_image.char} {center_x} {center_y} {char_image.width} {char_image.height}"
+            )
+            y += char_image.height
 
-            # Choose top-left corner for the square
-            start_x = random.randint(0, CANVAS_SIZE[0] - 2 * square_size)
-            start_y = random.randint(0, CANVAS_SIZE[1] - 2 * square_size)
-
-            # Calculate bboxes for the square
-            for dx, dy in [(0, 0), (square_size, 0), (0, square_size), (square_size, square_size)]:
-                x = start_x + dx
-                y = start_y + dy
-                bbox = (x, y, x + square_size, y + square_size)
-                group_bboxes.append(bbox)
-                center_x = (bbox[0] + bbox[2]) / 2
-                center_y = (bbox[1] + bbox[3]) / 2
-                char_image = char_images.pop(0)
-                group_annotations.append(
-                    f"{char_image.char} {center_x} {center_y} {square_size} {square_size}"
-                )
-
-            if not check_group_overlap(group_bboxes):
-                for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images[:4]):
-                    bboxes.append(bbox)
-                    annotations.append(annotation)
-                    canvas.paste(char_image.image, (bbox[0], bbox[1]), char_image.image)
-                placed = True
-            attempts += 1
-
-    def place_random():
-        """Places a single character randomly."""
-        placed = False
-        attempts = 0
-        while not placed and attempts < 100:
-            char_image = char_images.pop(0)
-            x = random.randint(0, CANVAS_SIZE[0] - char_image.width)
-            y = random.randint(0, CANVAS_SIZE[1] - char_image.height)
-            bbox = (x, y, x + char_image.width, y + char_image.height)
-
-            if not check_overlap(bbox, bboxes):
+        if not check_group_overlap(group_bboxes):
+            for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images[:num_vertical]):
                 bboxes.append(bbox)
-                center_x = (bbox[0] + bbox[2]) / 2
-                center_y = (bbox[1] + bbox[3]) / 2
-                annotations.append(
-                    f"{char_image.char} {center_x} {center_y} {char_image.width} {char_image.height}"
-                )
-                canvas.paste(char_image.image, (x, y), char_image.image)
-                placed = True
-            attempts += 1
+                annotations.append(annotation)
+                canvas.paste(char_image.image, (bbox[0], bbox[1]), char_image.image)
+            del char_images[:num_vertical]
+            placed = True
+        attempts += 1
 
-    # Prioritize placements
-    char_images.sort(key=lambda c: c.height, reverse=True)  # Place larger characters first
-    while char_images:
-        if random.random() < 0.4 and len(char_images) >= 2:  # 40% chance for vertical arrangement
-            place_vertical_arrangement()
-        elif random.random() < 0.3 and len(char_images) >= 4:  # 30% chance for square arrangement
-            place_square_arrangement()
-        else:  # Fallback to random placement
-            place_random()
+
+def place_square_arrangement(canvas, bboxes, annotations, spacing=0.2, margin=10):
+    """Places characters in a square arrangement."""
+    # generate 4 chars of equal font and size
+    font_size = random.randint(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    font = extract_random_font()
+    generated = [generate_random_char_image(font_size, font) for _ in range(4)]
+
+    char_width = generated[0][0].width  # equal sizes
+    char_height = generated[0][0].height
+
+    spacing = int(np.ceil(spacing * char_width))
+
+    placed = False
+    attempts = 0
+    while not placed and attempts < 100:
+
+        group_bboxes = []
+        group_annotations = []
+        char_images = []
+
+        # arrangement anchor
+        start_x = random.randint(margin, CANVAS_SIZE[0] - 2 * char_width - margin)
+        start_y = random.randint(margin, CANVAS_SIZE[1] - 2 * char_height - margin)
+
+        # character relative anchors
+        for dx, dy in [(0, 0), (char_width + spacing, 0), (0, char_height + spacing),
+                       (char_width + spacing, char_height + spacing)]:
+            # absolute anchors
+            x = start_x + dx
+            y = start_y + dy
+
+            bbox = (x, y, x + char_width, y + char_height)
+            group_bboxes.append(bbox)
+
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+
+            char_image, char, radical, font_filename = generated.pop(0)
+
+            char_images.append(char_image)
+
+            group_annotations.append(
+                f"{char} {center_x} {center_y} {char_width} {char_height} {radical} {font_filename}"
+            )
+
+        if not check_group_overlap(group_bboxes, bboxes):
+            for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images):
+                bboxes.append(bbox)
+                annotations.append(annotation)
+                canvas.paste(char_image, (bbox[0], bbox[1]), char_image)
+            placed = True
+        attempts += 1
+
+
+def place_random(canvas, bboxes, annotations):
+    """Places a single character randomly."""
+    placed = False
+    attempts = 0
+    while not placed and attempts < 100:
+        font_size = random.randint(MIN_FONT_SIZE, MAX_FONT_SIZE)
+        char_image, char, radical, font_filename = generate_random_char_image(font_size)
+
+        x = random.randint(0, CANVAS_SIZE[0] - char_image.width)
+        y = random.randint(0, CANVAS_SIZE[1] - char_image.height)
+        bbox = (x, y, x + char_image.width, y + char_image.height)
+
+        if not check_overlap(bbox, bboxes):
+            bboxes.append(bbox)
+            center_x = (bbox[0] + bbox[2]) / 2
+            center_y = (bbox[1] + bbox[3]) / 2
+            annotations.append(
+                f"{char} {center_x} {center_y} {char_image.width} {char_image.height} {radical} {font_filename}"
+            )
+            canvas.paste(char_image, (x, y), char_image)
+            placed = True
+        attempts += 1
+
 
 def generate_image(index):
+    # create canvas
     canvas = Image.new("RGB", CANVAS_SIZE, (255, 255, 255))
     draw = ImageDraw.Draw(canvas)
+    # choose total num of characters to place
     num_chars = random.randint(1, MAX_CHARACTERS)
     bboxes = []
     annotations = []
-
-    for _ in range(num_chars):
-        char, radical, font_filename = extract_character()
-        font_path = os.path.join(FONTS_DIR, font_filename)
-        font_size = random.randint(MIN_FONT_SIZE, MAX_FONT_SIZE)
-        font = ImageFont.truetype(font_path, font_size)
-
-        char_image = Image.new("RGBA", (font_size * 2, font_size * 2), color=0)
-        char_draw = ImageDraw.Draw(char_image)
-        char_draw.text((0, 0), char, font=font, fill="black")
-        char_image = char_image.crop(char_image.getbbox())
-
-        #char_image = augment_image(char_image)
-
-        placed = False
-        attempts = 0
-        while not placed and attempts < 100:
-            x = random.randint(0, CANVAS_SIZE[0] - char_image.width)
-            y = random.randint(0, CANVAS_SIZE[1] - char_image.height)
-            bbox = (x, y, x + char_image.width, y + char_image.height)
-            if not check_overlap(bbox, bboxes):
-                placed = True
-                bboxes.append(bbox)
-                center_x = (bbox[0] + bbox[2]) / 2
-                center_y = (bbox[1] + bbox[3]) / 2
-                annotations.append(
-                    f"{char} {center_x} {center_y} {char_image.width} {char_image.height} {radical} {font_filename}")
-                canvas.paste(char_image, (x, y), char_image)
-            attempts += 1
+    # place characters
+    while num_chars > 0:
+        # Prioritize placements
+        if random.random() < 0.4 and num_chars >= 2:  # 40% chance for vertical arrangement
+            num_chars -= place_vertical_arrangement(num_chars, canvas, bboxes, annotations)
+        if random.random() < 0.3 and num_chars >= 4:  # 30% chance for square arrangement
+            place_square_arrangement(canvas, bboxes, annotations)
+            num_chars -= 4
+        else:  # Fallback to random placement
+            place_random(canvas, bboxes, annotations)
+            num_chars -= 1
 
     image_path = os.path.join(OUTPUT_DIR, f"{index}.png")
     canvas.save(image_path)
