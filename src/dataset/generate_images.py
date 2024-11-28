@@ -3,7 +3,6 @@ import random
 import sqlite3
 from PIL import Image, ImageDraw, ImageFont, ImageFilter, ImageEnhance
 import numpy as np
-from numpy.f2py.auxfuncs import throw_error
 
 # generation params
 
@@ -168,41 +167,66 @@ def check_group_overlap(group_bboxes, bboxes):
     return False
 
 
-# TODO: FINISH VERTICAL ARRANGEMENT, UNIFY SPACING AND MARGIN FOR ALL PLACEMENTS, TIDY UP CODE, ADD BACKGROUND IMAGES, VISUALIZE AND STABILIZE CHAR PROBABILITY DISTRIBUTION
+# TODO: INFLATE BB A LITTLE BIT, UNIFY SPACING AND MARGIN FOR ALL PLACEMENTS, TIDY UP CODE, ADD BACKGROUND IMAGES, VISUALIZE AND STABILIZE CHAR PROBABILITY DISTRIBUTION
+
 
 def place_vertical_arrangement(canvas, bboxes, annotations, spacing=0.2, margin=10):
-    """Places a vertical arrangement of characters."""
-    placed = False
+    """Places a vertical arrangement of a randum number of characters. Returns the placed number"""
+    # generate a random num of chars of equal font and size
+    font_size = random.randint(MIN_FONT_SIZE, MAX_FONT_SIZE)
+    font = extract_random_font()
+    generated = [generate_random_char_image(font_size, font)]
+
+    char_height = generated[0][0].height
+    char_width = generated[0][0].width
+
+    spacing = int(np.ceil(spacing * char_width))
+
+    max_vertical_num = int(np.floor((CANVAS_SIZE[1]-2*margin)/(char_height+spacing)))
+    vertical_num = random.randint(2, max_vertical_num)
+
+    generated.extend([generate_random_char_image(font_size, font) for _ in range(vertical_num-1)])
+
     attempts = 0
-    while not placed and attempts < 100:
-        num_vertical = random.randint(2, min(6, len(char_images)))  # Random vertical group size
+    while attempts < 100:
+
         group_bboxes = []
         group_annotations = []
-        total_height = sum(char_images[i].height for i in range(num_vertical))
-        max_width = max(char_images[i].width for i in range(num_vertical))
-        start_x = random.randint(0, CANVAS_SIZE[0] - max_width)
-        start_y = random.randint(0, CANVAS_SIZE[1] - total_height)
-        y = start_y
+        char_images = []
 
-        for i in range(num_vertical):
-            char_image = char_images[i]
-            bbox = (start_x, y, start_x + char_image.width, y + char_image.height)
+        # arrangement anchor
+        start_x = random.randint(margin, CANVAS_SIZE[0] - char_width - margin)
+        start_y = random.randint(margin, CANVAS_SIZE[1] - vertical_num * (char_height+spacing) - margin)
+
+        # character relative anchors
+        for dy in [(char_height + spacing)*n for n in range(vertical_num)]:
+            # absolute anchors
+            x = start_x
+            y = start_y + dy
+
+            bbox = (x, y, x + char_width, y + char_height)
             group_bboxes.append(bbox)
+
             center_x = (bbox[0] + bbox[2]) / 2
             center_y = (bbox[1] + bbox[3]) / 2
-            group_annotations.append(
-                f"{char_image.char} {center_x} {center_y} {char_image.width} {char_image.height}"
-            )
-            y += char_image.height
 
-        if not check_group_overlap(group_bboxes):
-            for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images[:num_vertical]):
+            char_image, char, radical, font_filename = generated.pop(0)
+
+            char_images.append(char_image)
+
+            group_annotations.append(
+                f"{char} {center_x} {center_y} {char_width} {char_height} {radical} {font_filename}"
+            )
+
+        if not check_group_overlap(group_bboxes, bboxes):
+            for bbox, annotation, char_image in zip(group_bboxes, group_annotations, char_images):
                 bboxes.append(bbox)
                 annotations.append(annotation)
-                canvas.paste(char_image.image, (bbox[0], bbox[1]), char_image.image)
-            del char_images[:num_vertical]
-            placed = True
+                canvas.paste(char_image, (bbox[0], bbox[1]), char_image)
+            return vertical_num
         attempts += 1
+
+    return 0
 
 
 def place_square_arrangement(canvas, bboxes, annotations, spacing=0.2, margin=10):
@@ -295,7 +319,7 @@ def generate_image(index):
     while num_chars > 0:
         # Prioritize placements
         if random.random() < 0.4 and num_chars >= 2:  # 40% chance for vertical arrangement
-            num_chars -= place_vertical_arrangement(num_chars, canvas, bboxes, annotations)
+            num_chars -= place_vertical_arrangement(canvas, bboxes, annotations)
         if random.random() < 0.3 and num_chars >= 4:  # 30% chance for square arrangement
             place_square_arrangement(canvas, bboxes, annotations)
             num_chars -= 4
