@@ -2,6 +2,7 @@ import sqlite3
 
 DB_NAME = "chardb.sqlite"
 
+
 def remove_unassociated_characters():
     """Remove characters from the Characters table that have no font association."""
     conn = sqlite3.connect(DB_NAME)
