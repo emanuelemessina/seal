@@ -1,6 +1,14 @@
 # SEAL
  Structured Encoder for Ancient Logograms
 
+## Requirements
+
+```
+pip install -r requirements.txt
+```
+
+Install pytorch for the specific CUDA version you have. 
+
 ## Train
 
 ```

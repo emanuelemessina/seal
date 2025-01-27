@@ -131,7 +131,7 @@ class CustomBoxHead(nn.Module):
 
     def custom_forward(self, x):
         x = x.flatten(start_dim=1)
-        self.sub_logits = torch.empty(0)
+        self.sub_logits = torch.empty(0).to(device)
 
         # predict superclasses
         self.super_logits = self.super_classifier(x)
@@ -170,8 +170,8 @@ model.to(device)
 
 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10000)
 optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0005)
-loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights)
-loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights)
+loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
+loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
 lambda_superclasses = 1
 lambda_classes = 0.9
 
@@ -201,7 +201,7 @@ log_file = open('loss_output.txt', 'a')
 
 def log(msg):
     print(msg)
-    log_file.write(msg)
+    log_file.write(msg+'\n')
 
 
 log(f'Started training {time.strftime("%Y-%m-%d_%H-%M-%S")}')
@@ -365,7 +365,7 @@ for epoch in range(num_epochs):
                 loss_output += f'{"Head Classification Loss":<26}: {frcnn_classification_mean:.4f}\n'
             else:
                 custom_classification_mean = np.mean(custom_classification_losses)
-                loss_output += f'{"Custom Classification Loss":<26}: {custom_classification_mean:.4f}\n'
+                loss_output += f'{"Custom Classification Loss":<26}: {custom_classification_mean:.4f}'
 
             log(loss_output)
 
@@ -379,7 +379,7 @@ for epoch in range(num_epochs):
             else:
                 plot_data['custom_classification'].append(custom_classification_mean / np.max(custom_classification_losses))
 
-        if batch_idx != 0 and batch_idx % 100 == 0:
+        if batch_idx != 0 and batch_idx % 1000 == 0:
             # save state
             checkpoint_name = f'checkpoint_{model_type}_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
             torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
@@ -387,3 +387,5 @@ for epoch in range(num_epochs):
             log(f"Saved checkpoint {checkpoint_name}")
 
 log("Training done.")
+
+log_file.close()
