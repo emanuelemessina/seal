@@ -1,5 +1,12 @@
 # SEAL
- Single-shot Encoder for Ancient Logograms
+ Structured Encoder for Ancient Logograms
+
+## Train
+
+```
+cd model
+python faster-rcnn.py
+```
 
 ## Credits
 
@@ -10,5 +17,6 @@
   - diyiziti.com
 
 - Kangxi dictionary: https://github.com/7468696e6b/kangxiDictText
+- Classical chinese frequency list: https://lingua.mtsu.edu
 
 - Background images from Pinterest

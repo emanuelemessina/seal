@@ -1,3 +1,10 @@
+# dataset
+dataset/output/images*
+dataset/output/labels/
+model/loss_output.txt
+*.rar
+checkpoint*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
