@@ -315,7 +315,7 @@ if not eval:
     plot_thread = threading.Thread(target=plot_losses_async, args=(plot_data, model_type))
     plot_thread.start()
 
-    num_epochs = 1
+    num_epochs = 10
     for epoch in range(num_epochs):
 
         log(f'Epoch {epoch} ...')
@@ -425,7 +425,7 @@ if not eval:
                     plot_data['custom_classification_super'].append(custom_classification_supermean / np.max(custom_classification_superlosses))
                     plot_data['custom_classification_sub'].append(custom_classification_submean / np.max(custom_classification_sublosses))
 
-            if batch_idx != 0 and batch_idx % (len(dataset)//2) == 0:
+            if batch_idx != 0 and batch_idx % (len(dataset)//4) == 0:
                 # save state
                 checkpoint_name = f'checkpoint_{model_type}_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
                 torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
