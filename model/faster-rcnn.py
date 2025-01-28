@@ -407,23 +407,29 @@ if not eval:
 
                 log(loss_output)
 
-                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_mean:.4f},{rpn_classification_mean:.4f},{frcnn_localization_mean:.4f}')
+                rpn_localization_norm = rpn_localization_mean / np.max(rpn_localization_losses)
+                rpn_classification_norm = rpn_classification_mean / np.max(rpn_classification_losses)
+                frcnn_localization_norm = frcnn_localization_mean / np.max(frcnn_localization_losses)
+
+                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_norm:.4f},{rpn_classification_norm:.4f},{frcnn_localization_norm:.4f}')
                 if model_type == "standard":
-                    loss_file.write(f',{frcnn_classification_mean:.4f}\n')
+                    frcnn_classification_norm = frcnn_classification_mean / np.max(frcnn_classification_losses)
+                    loss_file.write(f',{frcnn_classification_norm:.4f}\n')
                 else:
-                    loss_file.write(f',{custom_classification_supermean:.4f},{custom_classification_submean:.4f}\n')
+                    custom_classification_supernorm = custom_classification_supermean / np.max(custom_classification_superlosses)
+                    custom_classification_subnorm = custom_classification_submean / np.max(custom_classification_sublosses)
+                    loss_file.write(f',{custom_classification_supernorm:.4f},{custom_classification_subnorm:.4f}\n')
 
                 # Update the plot data
-                plot_data['rpn_localization'].append(rpn_localization_mean / np.max(rpn_localization_losses))
-                plot_data['rpn_classification'].append(rpn_classification_mean / np.max(rpn_classification_losses))
-                plot_data['frcnn_localization'].append(frcnn_localization_mean / np.max(frcnn_localization_losses))
+                plot_data['rpn_localization'].append(rpn_localization_norm)
+                plot_data['rpn_classification'].append(rpn_classification_norm)
+                plot_data['frcnn_localization'].append(frcnn_localization_norm)
 
                 if model_type == "standard":
-                    plot_data['frcnn_classification'].append(
-                        frcnn_classification_mean / np.max(frcnn_classification_losses))
+                    plot_data['frcnn_classification'].append(frcnn_classification_norm)
                 else:
-                    plot_data['custom_classification_super'].append(custom_classification_supermean / np.max(custom_classification_superlosses))
-                    plot_data['custom_classification_sub'].append(custom_classification_submean / np.max(custom_classification_sublosses))
+                    plot_data['custom_classification_super'].append(custom_classification_supernorm)
+                    plot_data['custom_classification_sub'].append(custom_classification_subnorm)
 
             if batch_idx != 0 and batch_idx % (len(dataset)//4) == 0:
                 # save state
