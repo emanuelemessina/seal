@@ -56,7 +56,7 @@ superclasses_groups = dataset.radical_groups
 
 min_size = max_size = 256  # so that the images are not resized! (and so the boxes aren't either)
 
-backbone = resnet_fpn_backbone(backbone_name="resnet50", trainable_layers=5, weights=ResNet50_Weights.IMAGENET1K_V1)
+backbone = resnet_fpn_backbone(backbone_name="resnet50", trainable_layers=5, weights=None)
 
 anchor_generator = AnchorGenerator(
     sizes=((16,), (32,), (50,), (64,), (128,),),
@@ -189,8 +189,8 @@ print(model)
 
 model.to(device)
 
-torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10000)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.005, weight_decay=0.0005)
+torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0005)
 loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
 loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
 lambda_superclasses = 1
@@ -312,8 +312,8 @@ if not eval:
     }
 
     # Start the plotting thread
-    plot_thread = threading.Thread(target=plot_losses_async, args=(plot_data, model_type))
-    plot_thread.start()
+    #plot_thread = threading.Thread(target=plot_losses_async, args=(plot_data, model_type))
+    #plot_thread.start()
 
     num_epochs = 10
     for epoch in range(num_epochs):
