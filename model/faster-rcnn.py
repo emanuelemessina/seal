@@ -320,16 +320,16 @@ if not eval:
 
         log(f'Epoch {epoch} ...')
 
-        rpn_classification_losses = []
-        rpn_localization_losses = []
-        frcnn_classification_losses = []
-        frcnn_localization_losses = []
-        custom_classification_superlosses = []
-        custom_classification_sublosses = []
-
         for batch_idx, (images, targets) in enumerate(dataloader):
 
             log(f'Batch {batch_idx + 1}/{len(dataloader)}...')
+
+            rpn_classification_losses = []
+            rpn_localization_losses = []
+            frcnn_classification_losses = []
+            frcnn_localization_losses = []
+            custom_classification_superlosses = []
+            custom_classification_sublosses = []
 
             optimizer.zero_grad()
 
