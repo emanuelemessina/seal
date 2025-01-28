@@ -431,7 +431,7 @@ if not eval:
                     plot_data['custom_classification_super'].append(custom_classification_supernorm)
                     plot_data['custom_classification_sub'].append(custom_classification_subnorm)
 
-            if batch_idx != 0 and batch_idx % (len(dataset)//4) == 0:
+            if batch_idx != 0 and batch_idx % (len(dataset)//4 - 1) == 0:
                 # save state
                 checkpoint_name = f'checkpoint_{model_type}_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
                 torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
