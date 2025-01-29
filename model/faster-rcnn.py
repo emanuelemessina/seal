@@ -116,89 +116,56 @@ input_features_size = backbone.out_channels * roi_output_size ** 2
 
 
 class ReductionHead(nn.Module):
-    def __init__(self, in_channels):
+    def __init__(self, in_features, out_features=1024):
         super().__init__()
-        self.fc1 = nn.Linear(in_channels, 4096) # in channels 12k
-        self.fc2 = nn.Linear(4096, 1024)
-        self.fc3 = nn.Linear(1024, 1024)
+        self.fc1 = nn.Linear(in_features, 4096) # in channels 12k
+        self.fc2 = nn.Linear(4096, out_features)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
-        return x
-
-
-class ReductionAdapter(nn.Module):
-    def __init__(self, reduced_dim):
-        super().__init__()
-        self.fc = nn.Linear(reduced_dim, 256)
-
-    def forward(self, x):
-        return F.relu(self.fc(x))
-
-
-class MyClassifier(nn.Module):
-    def __init__(self, in_channels, out_channels):
-        super().__init__()
-        self.head = ReductionHead(in_channels)
-        self.adapter = ReductionAdapter(self.head.fc3.out_features)  # 256
-        self.fc = nn.Linear(self.adapter.fc.out_features, out_channels)  # out 50
-
-    def forward(self, x):
-        x = self.head(x)
-        x = self.adapter(x)
-        x = self.fc(x)
-        return x
-
-
-class BypassHead(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
-        return x
+        x0 = F.relu(self.fc1(x))
+        x1 = F.relu(self.fc2(x0))
+        return x1
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, in_channels, num_superclasses, superclasses_groups):
+    def __init__(self, num_superclasses, superclasses_groups, in_features=1024, funneled_features=256):
         super().__init__()
 
-        self.box_head = ReductionHead(in_channels)
-        reduced_dim = self.box_head.fc3.out_features # 1024
-        adapter_dim = 256
-        self.cls_score_dummy = nn.Sequential(ReductionAdapter(reduced_dim), nn.Linear(adapter_dim, 2))
-        self.bbox_pred = nn.Sequential(ReductionAdapter(reduced_dim), nn.Linear(adapter_dim, 2 * 4))  # hardcoded 2 classes (obj/bgd)
+        self.box_funnel = nn.Linear(in_features, funneled_features)
+        self.cls_score_dummy = nn.Linear(funneled_features, 2)
+        self.bbox_pred = nn.Linear(funneled_features, 2 * 4)  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.super_classifier = MyClassifier(in_channels, num_superclasses)  # superclasses 150
-
+        self.classifier_repeater = nn.Linear(in_features, in_features)
+        self.super_classifier = nn.Sequential(nn.Linear(in_features, funneled_features), nn.ReLU(), nn.Linear(funneled_features, num_superclasses))  # superclasses 150
         # in_ch 12k, subclasses per group 50
-        self.sub_classifiers = nn.ModuleList([MyClassifier(num_superclasses + in_channels, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
+        self.sub_classifiers = nn.ModuleList([nn.Linear(num_superclasses + in_features, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
 
-    def forward(self, x):
-        x = x.flatten(start_dim=1)
+    def forward(self, x1):
+        x1 = x1.flatten(start_dim=1)
 
-        head_features = self.box_head(x) # simulate the original box head
+        box_features = F.relu(self.box_funnel(x1)) # simulate the original box head
 
-        scores = self.cls_score_dummy(head_features)
-        bbox_deltas = self.bbox_pred(head_features)
+        scores = self.cls_score_dummy(box_features)
+        bbox_deltas = self.bbox_pred(box_features)
 
         return scores, bbox_deltas
 
-    def custom_forward(self, x):
-        x = x.flatten(start_dim=1)
+    def custom_forward(self, x1):
+        x1 = x1.flatten(start_dim=1)
+
+        x2 = F.relu(self.classifier_repeater(x1))
+
         self.sub_logits = torch.empty(0).to(device)
 
         # predict superclasses
-        self.super_logits = self.super_classifier(x)
+        self.super_logits = self.super_classifier(x2)
 
         for i, sub_cl in enumerate(self.sub_classifiers):
             # predict outputs of this subclass group with this group's head, input is cat superlogits | shared features
-            sub_head_output = sub_cl(torch.cat((self.super_logits, x), 1))
+            sub_head_output = sub_cl(torch.cat((self.super_logits, x2), 1))
             # append it to the total output
             self.sub_logits = torch.cat((self.sub_logits, sub_head_output), 1)
 
@@ -210,8 +177,8 @@ if model_type == "custom":
                        backbone=backbone, rpn_anchor_generator=anchor_generator,
                        rpn_head=rpn_head,
                        box_roi_pool=box_roi_align,
-                       box_head=BypassHead(),
-                       box_predictor=CustomPredictor(input_features_size, num_superclasses,
+                       box_head=ReductionHead(input_features_size),
+                       box_predictor=CustomPredictor(num_superclasses,
                                                      superclasses_groups))
 
     # using custom classification, don't care about the fake one
