@@ -38,20 +38,23 @@ parser.add_argument('--checkpoint_path', type=str, default='', help='Path to the
 parser.add_argument('--eval', type=str, default='',
                     help='Which dataset to evaluate (train|val|test), if empty the model trains on the train dataset')
 parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use the CPU instead of CUDA')
+parser.add_argument('--discard_optim', type=bool, default=False, help='Discard optim state dict')
 args = parser.parse_args()
 
 model_type = args.model_type
 checkpoint_path = args.checkpoint_path
 eval = args.eval
 force_cpu = args.force_cpu
+discard_optim = args.discard_optim
 
 device = torch.device('cuda') if torch.cuda.is_available() and not force_cpu else torch.device('cpu')
 print(f'Using device: {device}')
 
 # Define the dataset and dataloader
 data_folder = '../dataset/output'
+batch_size = 2
 dataset = CharacterDataset(data_folder, transform=T.ToTensor())
-dataloader = DataLoader(dataset, batch_size=2, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
+dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
 num_classes = len(dataset.classes)
 num_superclasses = len(dataset.radical_counts)
 superclasses_groups = dataset.radical_groups
@@ -98,15 +101,40 @@ representation_size = 1024
 input_features_size = backbone.out_channels * roi_output_size ** 2
 
 
-class SubClassifier(nn.Module):
-    def __init__(self, in_channels, representation_size, out_channels):
+class ReductionHead(nn.Module):
+    def __init__(self, in_channels):
         super().__init__()
-        self.fc1 = nn.Linear(in_channels, representation_size)
-        self.fc2 = nn.Linear(representation_size, out_channels)
+        self.fc1 = nn.Linear(in_channels, 4096) # in channels 12k
+        self.fc2 = nn.Linear(4096, 1024)
+        self.fc3 = nn.Linear(1024, 1024)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
-        x = self.fc2(x)
+        x = F.relu(self.fc2(x))
+        x = F.relu(self.fc3(x))
+        return x
+
+
+class ReductionAdapter(nn.Module):
+    def __init__(self, reduced_dim):
+        super().__init__()
+        self.fc = nn.Linear(reduced_dim, 256)
+
+    def forward(self, x):
+        return F.relu(self.fc(x))
+
+
+class MyClassifier(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super().__init__()
+        self.head = ReductionHead(in_channels)
+        self.adapter = ReductionAdapter(self.head.fc3.out_features)  # 256
+        self.fc = nn.Linear(self.adapter.fc.out_features, out_channels)  # out 50
+
+    def forward(self, x):
+        x = self.head(x)
+        x = self.adapter(x)
+        x = self.fc(x)
         return x
 
 
@@ -120,27 +148,27 @@ class BypassHead(nn.Module):
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, in_channels, representation_size, num_superclasses, superclasses_groups):
+    def __init__(self, in_channels, num_superclasses, superclasses_groups):
         super().__init__()
 
-        self.original_box_head = TwoMLPHead(in_channels, representation_size)
-
-        self.cls_score_dummy = nn.Linear(representation_size, 2)
-        self.bbox_pred = nn.Linear(representation_size, 2 * 4) # hardcoded 2 classes (obj/bgd)
+        self.box_head = ReductionHead(in_channels)
+        reduced_dim = self.box_head.fc3.out_features # 1024
+        adapter_dim = 256
+        self.cls_score_dummy = nn.Sequential(ReductionAdapter(reduced_dim), nn.Linear(adapter_dim, 2))
+        self.bbox_pred = nn.Sequential(ReductionAdapter(reduced_dim), nn.Linear(adapter_dim, 2 * 4))  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.super_classifier = nn.Sequential(TwoMLPHead(in_channels, representation_size),
-                                              nn.Linear(representation_size, num_superclasses))
-        self.sub_classifiers = nn.ModuleList(
-            [SubClassifier(num_superclasses + in_channels, representation_size, superclasses_groups[i][1]) for i in
-             range(len(superclasses_groups))])
+        self.super_classifier = MyClassifier(in_channels, num_superclasses)  # superclasses 150
+
+        # in_ch 12k, subclasses per group 50
+        self.sub_classifiers = nn.ModuleList([MyClassifier(num_superclasses + in_channels, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
 
     def forward(self, x):
         x = x.flatten(start_dim=1)
 
-        head_features = self.original_box_head(x) # simulate the original box head
+        head_features = self.box_head(x) # simulate the original box head
 
         scores = self.cls_score_dummy(head_features)
         bbox_deltas = self.bbox_pred(head_features)
@@ -186,12 +214,27 @@ print(model)
 
 model.to(device)
 
+# split params for different learning rates (optional)
+
+box_regression_params = []
+classification_params = []
+
+for name, param in model.named_parameters():
+    if not param.requires_grad:
+        continue
+    if "bbox_pred" in name:
+        box_regression_params.append(param)
+    else:
+        classification_params.append(param)
+
 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
-optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=0.0005)
+optimizer = torch.optim.SGD([{"params": box_regression_params, "lr": 0.0005},
+                            {"params": classification_params, "lr": 0.001}], momentum=0.9, weight_decay=0.0001)
+scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3, eta_min=0.0001)
 loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
 loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
-lambda_superclasses = 1
-lambda_classes = 0.9
+lambda_superclasses = 0.99
+lambda_classes = 0.95
 
 try:
     if checkpoint_path == 'ignore':
@@ -207,7 +250,9 @@ try:
     print(f'Using checkpoint {checkpoint_path}')
     checkpoint = torch.load(checkpoint_path)
     model.load_state_dict(checkpoint["model_state_dict"])
-    optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+    if not discard_optim:
+        optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+        scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
 except Exception as e:
     if e is FileNotFoundError:
         print(f"No checkpoint found at '{checkpoint_path}'.")
@@ -235,6 +280,8 @@ if not eval:
         loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss\n')
 
     log(f'Started training {date_time}')
+
+    iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
 
     num_epochs = 10
     for epoch in range(num_epochs):
@@ -337,9 +384,11 @@ if not eval:
             if batch_idx != 0 and batch_idx % (len(dataset)//4 - 1) == 0:
                 # save state
                 checkpoint_name = f'checkpoint_{model_type}_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
-                torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict()},
+                torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),  'scheduler_state_dict': scheduler.state_dict()},
                            checkpoint_name)
                 log(f"Saved checkpoint {checkpoint_name}")
+
+            scheduler.step(epoch + batch_idx / iterations_per_epoch)
 
     log("Training done.")
     log_file.close()
