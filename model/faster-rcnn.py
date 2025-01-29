@@ -9,6 +9,7 @@ import time
 from typing import Dict, List, Tuple
 import torch
 import torchvision.transforms as T
+from sympy import false
 from torch import nn
 from torch.fft import Tensor
 from torch.nn import CrossEntropyLoss
@@ -33,17 +34,18 @@ from dataset.dataset import CharacterDataset
 
 parser = argparse.ArgumentParser(description='SEAL')
 parser.add_argument('--model_type', type=str, default='custom', help='Type of the model to use (custom|standard)')
-parser.add_argument('--checkpoint_path', type=str, default='', help='Path to the checkpoint file')
+parser.add_argument('--checkpoint_path', type=str, default='', help='Path to the checkpoint file ("ignore" to force no checkpoint, otherwise latest checkpoint found will be used)')
 parser.add_argument('--eval', type=str, default='',
                     help='Which dataset to evaluate (train|val|test), if empty the model trains on the train dataset')
+parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use the CPU instead of CUDA')
 args = parser.parse_args()
 
 model_type = args.model_type
 checkpoint_path = args.checkpoint_path
 eval = args.eval
+force_cpu = args.force_cpu
 
-# Check if CUDA is available
-device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+device = torch.device('cuda') if torch.cuda.is_available() and not force_cpu else torch.device('cpu')
 print(f'Using device: {device}')
 
 # Define the dataset and dataloader
@@ -140,12 +142,14 @@ class CustomPredictor(nn.Module):
 
         head_features = self.original_box_head(x) # simulate the original box head
 
+        '''
         if not self.training: # in eval we swap the classifier with our custom trained one
             self.custom_forward(x)
             scores = self.sub_logits
         else:
             scores = self.cls_score_dummy(head_features) # use just the binary classifier for training as we'll call the custom forward to calc the custom loss
-
+        '''
+        scores = self.cls_score_dummy(head_features)
         bbox_deltas = self.bbox_pred(head_features)
 
         return scores, bbox_deltas
@@ -197,6 +201,9 @@ lambda_superclasses = 1
 lambda_classes = 0.9
 
 try:
+    if checkpoint_path == 'ignore':
+        print("Forced no checkpoint")
+        raise Exception
     if not checkpoint_path:
         checkpoint_files = glob.glob(f'checkpoint_{model_type}_*.pth')
         if len(checkpoint_files) == 0:
@@ -491,7 +498,7 @@ def visualize_predictions(images, boxes, labels, scores):
             x1, y1, x2, y2 = box
             ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
                                        fill=False, color='red', linewidth=2))
-            ax.text(x1, y1 - 5, f"{label}: {dataset.classes[label]} ({score})", color='red', fontproperties=fprop)
+            ax.text(x1, y1 - 5, f"{label}: {dataset.classes[label]} ({score:.2f})", color='red', fontproperties=fprop)
     plt.show()
 
 
@@ -512,6 +519,14 @@ if eval == 'train':
             pred_boxes.append(output["boxes"].detach().cpu())
             pred_labels.append(output["labels"].detach().cpu())
             scores.append(output["scores"].detach().cpu())
+
+        features = model.roi_heads.box_roi_pool.features
+        image_shapes = model.roi_heads.box_roi_pool.image_shapes
+        box_features = multiscale_roi_align(features, pred_boxes, image_shapes)
+        custom_classifier = model.roi_heads.box_predictor.custom_forward
+        super_logits, sub_logits = custom_classifier(box_features)
+        super_scores = F.softmax(super_logits, -1)
+        sub_scores = F.softmax(sub_logits, -1)
 
         visualize_predictions(images, pred_boxes, pred_labels, scores)
 
