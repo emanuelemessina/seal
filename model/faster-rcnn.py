@@ -97,7 +97,7 @@ multiscale_roi_align = MultiScaleRoIAlign(featmap_names=featmap_names, output_si
 box_roi_align = CustomRoIAlign(featmap_names=featmap_names, output_size=roi_output_size,
                                sampling_ratio=roi_sampling_ratio)
 
-representation_size = 1024
+
 input_features_size = backbone.out_channels * roi_output_size ** 2
 
 
@@ -197,13 +197,14 @@ if model_type == "custom":
                        rpn_head=rpn_head,
                        box_roi_pool=box_roi_align,
                        box_head=BypassHead(),
-                       box_predictor=CustomPredictor(input_features_size, representation_size, num_superclasses,
+                       box_predictor=CustomPredictor(input_features_size, num_superclasses,
                                                      superclasses_groups))
 
     # using custom classification, don't care about the fake one
     for param in model.roi_heads.box_predictor.cls_score_dummy.parameters():
         param.requires_grad = False
 else:
+    representation_size = 1024
     model = FasterRCNN(image_mean=dataset.mean, image_std=dataset.std, min_size=min_size, max_size=max_size,
                        backbone=backbone, rpn_anchor_generator=anchor_generator,
                        rpn_head=rpn_head,
