@@ -25,5 +25,7 @@ print("calculating...")
 mean = images.mean(dim=(0, 2, 3))/255
 std = images.std(dim=(0, 2, 3))/255
 
-print(f'mean: {mean}')
-print(f'std: {std}')
+with open("image_stats.txt", "w") as f:
+    print(f'mean: {mean}')
+    print(f'std: {std}')
+    f.write(f"mean {str(mean.numpy())}\nstd {str(std.numpy())}")
