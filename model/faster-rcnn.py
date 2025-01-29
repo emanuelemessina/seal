@@ -142,13 +142,6 @@ class CustomPredictor(nn.Module):
 
         head_features = self.original_box_head(x) # simulate the original box head
 
-        '''
-        if not self.training: # in eval we swap the classifier with our custom trained one
-            self.custom_forward(x)
-            scores = self.sub_logits
-        else:
-            scores = self.cls_score_dummy(head_features) # use just the binary classifier for training as we'll call the custom forward to calc the custom loss
-        '''
         scores = self.cls_score_dummy(head_features)
         bbox_deltas = self.bbox_pred(head_features)
 
@@ -490,17 +483,18 @@ def evaluate_detection(dataloader):
     print(f"Average IoU: {avg_iou:.4f}")
 
 
-def visualize_predictions(images, boxes, labels, scores):
+def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
     fig, axes = plt.subplots(1, len(images), figsize=(15, 5))
-    for ax, image, im_boxes, im_labels, im_scores in zip(axes, images, boxes, labels, scores):
+    for ax, image, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, boxes, scores, super_labels, sub_labels):
         ax.imshow(T.ToPILImage()(image))
-        for box, label, score in zip(im_boxes, im_labels, im_scores):
+        for box, score, superlabel, sublabel in zip(im_boxes, im_scores, im_superlabels, im_sublabels):
             x1, y1, x2, y2 = box
             ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
                                        fill=False, color='red', linewidth=2))
-            ax.text(x1, y1 - 5, f"{label}: {dataset.classes[label]} ({score:.2f})", color='red', fontproperties=fprop)
+            ax.text(x1, y1 - 5, f"[{score:.2f}] {dataset.classes[sublabel+1]} ({dataset.radical_counts[superlabel][0]})", color='red', fontproperties=fprop)
     plt.show()
 
+# TODO: remove background class from dataset as we are using custom classifier
 
 if eval == 'train':
     print("Evaluating on Train set")
@@ -515,10 +509,12 @@ if eval == 'train':
         pred_boxes = []
         pred_labels = []
         scores = []
+        boxes_per_image = []
         for output, target in zip(outputs, targets):
             pred_boxes.append(output["boxes"].detach().cpu())
             pred_labels.append(output["labels"].detach().cpu())
             scores.append(output["scores"].detach().cpu())
+            boxes_per_image.append(output['boxes'].shape[0])
 
         features = model.roi_heads.box_roi_pool.features
         image_shapes = model.roi_heads.box_roi_pool.image_shapes
@@ -527,8 +523,10 @@ if eval == 'train':
         super_logits, sub_logits = custom_classifier(box_features)
         super_scores = F.softmax(super_logits, -1)
         sub_scores = F.softmax(sub_logits, -1)
+        super_labels = torch.argmax(super_scores, dim=1).detach().cpu().split(boxes_per_image, 0)
+        sub_labels = torch.argmax(sub_scores, dim=1).detach().cpu().split(boxes_per_image, 0)
 
-        visualize_predictions(images, pred_boxes, pred_labels, scores)
+        visualize_predictions(images, pred_boxes, scores, super_labels, sub_labels)
 
         answer = input("Do you want to see other images? (y/n, default is y): ").strip().lower()
 

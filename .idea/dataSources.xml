@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
   <component name="DataSourceManagerImpl" format="xml" multifile-model="true">
-    <data-source source="LOCAL" name="chardb.sqlite" uuid="f522a23a-37b4-4b99-a1a6-fd7955a7f2ed">
+    <data-source source="LOCAL" name="chardb" uuid="480955e4-87ed-4fbd-9f7a-c48e6c1c6849">
       <driver-ref>sqlite.xerial</driver-ref>
       <synchronize>true</synchronize>
       <jdbc-driver>org.sqlite.JDBC</jdbc-driver>
-      <jdbc-url>jdbc:sqlite:D:\Coding\GitHub\seal\src\dataset\chardb\chardb.sqlite</jdbc-url>
+      <jdbc-url>jdbc:sqlite:D:\Coding\GitHub\seal\dataset\chardb\chardb.sqlite</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
       <libraries>
         <library>
