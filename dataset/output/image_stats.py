@@ -28,4 +28,4 @@ std = images.std(dim=(0, 2, 3))/255
 with open("image_stats.txt", "w") as f:
     print(f'mean: {mean}')
     print(f'std: {std}')
-    f.write(f"mean {str(mean.numpy())}\nstd {str(std.numpy())}")
+    f.write(f"mean {str(mean.numpy().tolist())}\nstd {str(std.numpy().tolist())}")
