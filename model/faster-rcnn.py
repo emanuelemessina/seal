@@ -236,85 +236,6 @@ if not eval:
 
     log(f'Started training {date_time}')
 
-
-    def plot_losses_async(plot_data, model_type):
-        plt.ion()
-        fig, ax = plt.subplots()
-        rpn_localization_line, = ax.plot([], [], label='RPN Localization Loss')
-        rpn_classification_line, = ax.plot([], [], label='RPN Classification Loss')
-        frcnn_localization_line, = ax.plot([], [], label='Head Localization Loss')
-
-        if model_type == "standard":
-            frcnn_classification_line, = ax.plot([], [], label='Head Classification Loss')
-        else:
-            custom_classification_superline, = ax.plot([], [], label='Super Classification Loss')
-            custom_classification_subline, = ax.plot([], [], label='Sub Classification Loss')
-
-        ax.set_xlabel('#batch/10')
-        ax.set_ylabel('Loss')
-        ax.legend()
-
-        current_max = 1.0
-
-        while True:
-            if plot_data['stop_flag']:
-                break
-
-            # Update the data for the plot
-            rpn_localization_line.set_data(range(len(plot_data['rpn_localization'])), plot_data['rpn_localization'])
-            rpn_classification_line.set_data(range(len(plot_data['rpn_classification'])), plot_data['rpn_classification'])
-            frcnn_localization_line.set_data(range(len(plot_data['frcnn_localization'])), plot_data['frcnn_localization'])
-
-            if model_type == "standard":
-                frcnn_classification_line.set_data(range(len(plot_data['frcnn_classification'])),
-                                                   plot_data['frcnn_classification'])
-            else:
-                custom_classification_superline.set_data(range(len(plot_data['custom_classification_super'])),
-                                                    plot_data['custom_classification_super'])
-                custom_classification_subline.set_data(range(len(plot_data['custom_classification_sub'])),
-                                                         plot_data['custom_classification_sub'])
-
-            # Determine the maximum value among the last items
-            last_values = [
-                plot_data['rpn_classification'][-1] if plot_data['rpn_classification'] else 0,
-                plot_data['rpn_localization'][-1] if plot_data['rpn_localization'] else 0,
-                plot_data['frcnn_localization'][-1] if plot_data['frcnn_localization'] else 0,
-            ]
-            if model_type == "standard":
-                last_values.append(plot_data['frcnn_classification'][-1] if plot_data['frcnn_classification'] else 0)
-            else:
-                last_values.append(plot_data['custom_classification_super'][-1] if plot_data['custom_classification_super'] else 0)
-                last_values.append(plot_data['custom_classification_sub'][-1] if plot_data['custom_classification_sub'] else 0)
-
-            max_last_value = max(last_values)
-
-            if max_last_value < 0.2 * current_max:
-                current_max = 0.2 * current_max
-            elif max_last_value > current_max:
-                current_max = 2 * max_last_value
-
-            ax.autoscale_view()
-            ax.relim()
-            ax.set_ylim(0, current_max)
-            fig.canvas.flush_events()
-            time.sleep(0.1)  # Update interval
-
-
-    # Shared data for plotting
-    plot_data = {
-        'rpn_localization': [],
-        'rpn_classification': [],
-        'frcnn_localization': [],
-        'frcnn_classification': [],
-        'custom_classification_super': [],
-        'custom_classification_sub': [],
-        'stop_flag': False
-    }
-
-    # Start the plotting thread
-    #plot_thread = threading.Thread(target=plot_losses_async, args=(plot_data, model_type))
-    #plot_thread.start()
-
     num_epochs = 10
     for epoch in range(num_epochs):
 
@@ -407,29 +328,11 @@ if not eval:
 
                 log(loss_output)
 
-                rpn_localization_norm = rpn_localization_mean / np.max(rpn_localization_losses)
-                rpn_classification_norm = rpn_classification_mean / np.max(rpn_classification_losses)
-                frcnn_localization_norm = frcnn_localization_mean / np.max(frcnn_localization_losses)
-
-                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_norm:.4f},{rpn_classification_norm:.4f},{frcnn_localization_norm:.4f}')
+                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_mean:.4f},{rpn_classification_mean:.4f},{frcnn_localization_mean:.4f}')
                 if model_type == "standard":
-                    frcnn_classification_norm = frcnn_classification_mean / np.max(frcnn_classification_losses)
-                    loss_file.write(f',{frcnn_classification_norm:.4f}\n')
+                    loss_file.write(f',{frcnn_classification_mean:.4f}\n')
                 else:
-                    custom_classification_supernorm = custom_classification_supermean / np.max(custom_classification_superlosses)
-                    custom_classification_subnorm = custom_classification_submean / np.max(custom_classification_sublosses)
-                    loss_file.write(f',{custom_classification_supernorm:.4f},{custom_classification_subnorm:.4f}\n')
-
-                # Update the plot data
-                plot_data['rpn_localization'].append(rpn_localization_norm)
-                plot_data['rpn_classification'].append(rpn_classification_norm)
-                plot_data['frcnn_localization'].append(frcnn_localization_norm)
-
-                if model_type == "standard":
-                    plot_data['frcnn_classification'].append(frcnn_classification_norm)
-                else:
-                    plot_data['custom_classification_super'].append(custom_classification_supernorm)
-                    plot_data['custom_classification_sub'].append(custom_classification_subnorm)
+                    loss_file.write(f',{custom_classification_supermean:.4f},{custom_classification_submean:.4f}\n')
 
             if batch_idx != 0 and batch_idx % (len(dataset)//4 - 1) == 0:
                 # save state
@@ -449,7 +352,7 @@ else:
 from torchvision.ops import box_iou
 
 import matplotlib.font_manager as fm
-fprop = fm.FontProperties(fname='C:\Windows\Fonts\hpsimplifiedhans-regular.ttf')
+fprop = fm.FontProperties(fname='C:\Windows\Fonts\msjhl.ttc')
 
 def compute_iou(pred_boxes, gt_boxes):
     if len(pred_boxes) == 0 or len(gt_boxes) == 0:
@@ -487,6 +390,7 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
     fig, axes = plt.subplots(1, len(images), figsize=(15, 5))
     for ax, image, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, boxes, scores, super_labels, sub_labels):
         ax.imshow(T.ToPILImage()(image))
+        im_boxes = im_boxes.detach().cpu()
         for box, score, superlabel, sublabel in zip(im_boxes, im_scores, im_superlabels, im_sublabels):
             x1, y1, x2, y2 = box
             ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
@@ -511,7 +415,7 @@ if eval == 'train':
         scores = []
         boxes_per_image = []
         for output, target in zip(outputs, targets):
-            pred_boxes.append(output["boxes"].detach().cpu())
+            pred_boxes.append(output["boxes"])
             pred_labels.append(output["labels"].detach().cpu())
             scores.append(output["scores"].detach().cpu())
             boxes_per_image.append(output['boxes'].shape[0])
