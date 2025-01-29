@@ -61,11 +61,25 @@ superclasses_groups = dataset.radical_groups
 
 min_size = max_size = 256  # so that the images are not resized! (and so the boxes aren't either)
 
-backbone = resnet_fpn_backbone(backbone_name="resnet50", trainable_layers=5, weights=None)
+backbone = resnet_fpn_backbone(backbone_name="resnet50", trainable_layers=5, returned_layers=[2, 3], weights=None)
+
+'''
+ResNet Block (Stage) | Feature Map | Output Size (for 256x256 image) | Layer Index
+Conv2_x	C1	64x64	1
+Conv3_x	C2	32x32	2
+Conv4_x	C3	16x16	3
+Conv5_x	C4	8x8	    4
+
+Feature Map Level | Image Size Downsampling	| Typical Target Object Size
+P2	8x (32x32)	Small objects (32-64)
+P3	16x (16x16)	Medium objects (64–128)
+P4	32x (8x8)   Large objects (128+)
+P5	64x (4x4)	
+'''
 
 anchor_generator = AnchorGenerator(
-    sizes=((16,), (32,), (50,), (64,), (128,),),
-    aspect_ratios=((1.0, 2.0,),) * 5
+    sizes=((16,), (50, ), (70, ),),
+    aspect_ratios=((1.0, 2.0,),) * 3
 )
 rpn_head = RPNHead(backbone.out_channels, anchor_generator.num_anchors_per_location()[0])
 
@@ -89,7 +103,7 @@ class CustomRoIAlign(MultiScaleRoIAlign):
 
 
 roi_output_size = 7
-featmap_names = ["0", "1", "2", "3"]
+featmap_names = ["0", "1"]
 roi_sampling_ratio = 2
 
 multiscale_roi_align = MultiScaleRoIAlign(featmap_names=featmap_names, output_size=roi_output_size,
@@ -229,9 +243,10 @@ for name, param in model.named_parameters():
         classification_params.append(param)
 
 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
-optimizer = torch.optim.SGD([{"params": box_regression_params, "lr": 0.0005},
-                            {"params": classification_params, "lr": 0.001}], momentum=0.9, weight_decay=0.0001)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=3, eta_min=0.0001)
+optimizer = torch.optim.Adam([{"params": box_regression_params, "lr": 0.0005},
+                            {"params": classification_params, "lr": 0.001}],weight_decay=0.0001)
+iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
+scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iterations_per_epoch, T_mult=2, eta_min=0.0001)
 loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
 loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
 lambda_superclasses = 0.99
@@ -281,8 +296,6 @@ if not eval:
         loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss\n')
 
     log(f'Started training {date_time}')
-
-    iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
 
     num_epochs = 10
     for epoch in range(num_epochs):
