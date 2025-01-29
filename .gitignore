@@ -3,7 +3,7 @@ dataset/output/images*
 dataset/output/labels*
 dataset/output/backup
 model/loss*
-model/log*
+model/log*.txt
 *.rar
 checkpoint*
 
