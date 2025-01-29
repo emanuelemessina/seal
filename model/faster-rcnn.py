@@ -122,6 +122,7 @@ class ReductionHead(nn.Module):
         self.fc2 = nn.Linear(4096, out_features)
 
     def forward(self, x):
+        x = x.flatten(start_dim=1)
         x0 = F.relu(self.fc1(x))
         x1 = F.relu(self.fc2(x0))
         return x1
@@ -308,8 +309,10 @@ if not eval:
                 features = model.roi_heads.box_roi_pool.features
                 image_shapes = model.roi_heads.box_roi_pool.image_shapes
                 box_features = multiscale_roi_align(features, gt_boxes, image_shapes)
+                box_head = model.roi_heads.box_head
+                x1 = box_head(box_features)
                 custom_classifier = model.roi_heads.box_predictor.custom_forward
-                super_logits, sub_logits = custom_classifier(box_features)
+                super_logits, sub_logits = custom_classifier(x1)
                 gt_sublabels = torch.cat(gt_sublabels, dim=0)
                 gt_superlabels = torch.cat(gt_superlabels, dim=0)
                 superloss = lambda_superclasses * loss_fn_superclass(super_logits, gt_superlabels)
