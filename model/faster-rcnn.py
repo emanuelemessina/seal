@@ -13,6 +13,7 @@ from sympy import false
 from torch import nn
 from torch.fft import Tensor
 from torch.nn import CrossEntropyLoss
+from torch.optim.lr_scheduler import StepLR
 from torch.utils.data import DataLoader
 from torchvision.models import ResNet101_Weights, ResNet50_Weights
 from torchvision.models.detection import fasterrcnn_resnet50_fpn, FasterRCNN_ResNet50_FPN_Weights
@@ -115,58 +116,60 @@ box_roi_align = CustomRoIAlign(featmap_names=featmap_names, output_size=roi_outp
 input_features_size = backbone.out_channels * roi_output_size ** 2
 
 
-class ReductionHead(nn.Module):
-    def __init__(self, in_features, out_features=1024):
+class BypassHead(nn.Module):
+    def __init__(self, in_features):
         super().__init__()
-        self.fc1 = nn.Linear(in_features, 4096) # in channels 12k
-        self.fc2 = nn.Linear(4096, out_features)
 
     def forward(self, x):
         x = x.flatten(start_dim=1)
-        x0 = F.relu(self.fc1(x))
-        x1 = F.relu(self.fc2(x0))
-        return x1
+        return x
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, num_superclasses, superclasses_groups, in_features=1024, funneled_features=256):
+    def __init__(self, num_superclasses, superclasses_groups, in_features, high_dim=4096, mid_dim=1024, funneled_dim=256):
         super().__init__()
 
-        self.box_funnel = nn.Linear(in_features, funneled_features)
-        self.cls_score_dummy = nn.Linear(funneled_features, 2)
-        self.bbox_pred = nn.Linear(funneled_features, 2 * 4)  # hardcoded 2 classes (obj/bgd)
+        self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
+        self.cls_score_dummy = nn.Linear(mid_dim, 2)
+        self.bbox_pred = nn.Linear(mid_dim, 2 * 4)  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.classifier_repeater = nn.Linear(in_features, in_features)
-        self.super_classifier = nn.Sequential(nn.Linear(in_features, funneled_features), nn.ReLU(), nn.Linear(funneled_features, num_superclasses))  # superclasses 150
+        self.classifier_distancer = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU(), nn.Linear(high_dim, high_dim))
+        self.superclassifier_funnel = nn.Linear(high_dim, mid_dim)
+        self.subclassifier_funnel = nn.Linear(high_dim, mid_dim)
+
+        self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 150
         # in_ch 12k, subclasses per group 50
-        self.sub_classifiers = nn.ModuleList([nn.Linear(num_superclasses + in_features, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
+        self.sub_classifiers = nn.ModuleList([nn.Linear(num_superclasses + mid_dim, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
 
-    def forward(self, x1):
-        x1 = x1.flatten(start_dim=1)
+    def forward(self, x):
+        x = x.flatten(start_dim=1)
 
-        box_features = F.relu(self.box_funnel(x1)) # simulate the original box head
+        box_features = F.relu(self.box_distancer(x))
 
         scores = self.cls_score_dummy(box_features)
         bbox_deltas = self.bbox_pred(box_features)
 
         return scores, bbox_deltas
 
-    def custom_forward(self, x1):
-        x1 = x1.flatten(start_dim=1)
+    def custom_forward(self, x):
+        x = x.flatten(start_dim=1)
 
-        x2 = F.relu(self.classifier_repeater(x1))
+        x = F.relu(self.classifier_distancer(x))
+
+        x_super = F.relu(self.superclassifier_funnel(x))
+        x_sub = F.relu(self.subclassifier_funnel(x))
 
         self.sub_logits = torch.empty(0).to(device)
 
         # predict superclasses
-        self.super_logits = self.super_classifier(x2)
+        self.super_logits = self.super_classifier(x_super)
 
         for i, sub_cl in enumerate(self.sub_classifiers):
             # predict outputs of this subclass group with this group's head, input is cat superlogits | shared features
-            sub_head_output = sub_cl(torch.cat((self.super_logits, x2), 1))
+            sub_head_output = sub_cl(torch.cat((self.super_logits, x_sub), 1))
             # append it to the total output
             self.sub_logits = torch.cat((self.sub_logits, sub_head_output), 1)
 
@@ -178,9 +181,9 @@ if model_type == "custom":
                        backbone=backbone, rpn_anchor_generator=anchor_generator,
                        rpn_head=rpn_head,
                        box_roi_pool=box_roi_align,
-                       box_head=ReductionHead(input_features_size),
+                       box_head=BypassHead(input_features_size),
                        box_predictor=CustomPredictor(num_superclasses,
-                                                     superclasses_groups))
+                                                     superclasses_groups, input_features_size))
 
     # using custom classification, don't care about the fake one
     for param in model.roi_heads.box_predictor.cls_score_dummy.parameters():
@@ -211,10 +214,10 @@ for name, param in model.named_parameters():
         classification_params.append(param)
 
 torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
-optimizer = torch.optim.Adam([{"params": box_regression_params, "lr": 0.0005},
-                            {"params": classification_params, "lr": 0.001}],weight_decay=0.0001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_decay=0.0001)
 iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
-scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iterations_per_epoch, T_mult=2, eta_min=0.0001)
+#scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iterations_per_epoch, T_mult=2, eta_min=0.0001)
+scheduler = StepLR(optimizer, step_size=2, gamma=0.1)
 loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
 loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
 lambda_superclasses = 0.99
@@ -257,11 +260,10 @@ if not eval:
 
     loss_file = open(f'loss_{date_time}.csv', 'a')
 
-    loss_file.write('epoch,batch,rpn_localization_loss,rpn_classification_loss,frcnn_localization_loss')
-    if model_type == "standard":
-        loss_file.write(',frcnn_classification_loss\n')
-    else:
-        loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss\n')
+    loss_file.write('epoch,batch,rpn_localization_loss,rpn_classification_loss,frcnn_localization_loss,frcnn_classification_loss')
+    if model_type == "custom":
+        loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss')
+    loss_file.write('\n')
 
     log(f'Started training {date_time}')
 
@@ -305,6 +307,7 @@ if not eval:
             batch_losses = model(images, targets)
 
             superloss = subloss = 0
+
             if model_type == "custom":
                 features = model.roi_heads.box_roi_pool.features
                 image_shapes = model.roi_heads.box_roi_pool.image_shapes
@@ -321,9 +324,8 @@ if not eval:
             loss = batch_losses['loss_box_reg']
             loss += batch_losses['loss_rpn_box_reg']
             loss += batch_losses['loss_objectness']
-            if model_type == "standard":
-                loss += batch_losses['loss_classifier']
-            else:
+            loss += batch_losses['loss_classifier']
+            if model_type == "custom":
                 loss += superloss + subloss
 
             loss.backward()
@@ -331,9 +333,8 @@ if not eval:
             rpn_classification_losses.append(batch_losses['loss_objectness'].item())
             rpn_localization_losses.append(batch_losses['loss_rpn_box_reg'].item())
             frcnn_localization_losses.append(batch_losses['loss_box_reg'].item())
-            if model_type == "standard":
-                frcnn_classification_losses.append(batch_losses['loss_classifier'].item())
-            else:
+            frcnn_classification_losses.append(batch_losses['loss_classifier'].item())
+            if model_type == "custom":
                 custom_classification_superlosses.append(superloss.item())
                 custom_classification_sublosses.append(subloss.item())
 
@@ -345,25 +346,23 @@ if not eval:
                 frcnn_localization_mean = np.mean(frcnn_localization_losses)
 
                 loss_output = ''
-                loss_output += f'{"RPN Localization Loss":<26}: {rpn_localization_mean:.4f}\n'
-                loss_output += f'{"RPN Classification Loss":<26}: {rpn_classification_mean:.4f}\n'
-                loss_output += f'{"Head Localization Loss":<26}: {frcnn_localization_mean:.4f}\n'
-                if model_type == "standard":
-                    frcnn_classification_mean = np.mean(frcnn_classification_losses)
-                    loss_output += f'{"Head Classification Loss":<26}: {frcnn_classification_mean:.4f}\n'
-                else:
+                loss_output += f'{"RPN Localization Loss":<26}: {rpn_localization_mean:.20f}\n'
+                loss_output += f'{"RPN Classification Loss":<26}: {rpn_classification_mean:.20f}\n'
+                loss_output += f'{"Head Localization Loss":<26}: {frcnn_localization_mean:.20f}\n'
+                frcnn_classification_mean = np.mean(frcnn_classification_losses)
+                loss_output += f'{"Head Classification Loss":<26}: {frcnn_classification_mean:.20f}\n'
+                if model_type == "custom":
                     custom_classification_supermean = np.mean(custom_classification_superlosses)
                     custom_classification_submean = np.mean(custom_classification_sublosses)
-                    loss_output += f'{"Super Classification Loss":<26}: {custom_classification_supermean:.4f}\n'
-                    loss_output += f'{"Sub Classification Loss":<26}: {custom_classification_submean:.4f}\n'
+                    loss_output += f'{"Super Classification Loss":<26}: {custom_classification_supermean:.20f}\n'
+                    loss_output += f'{"Sub Classification Loss":<26}: {custom_classification_submean:.20f}\n'
 
                 log(loss_output)
 
-                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_mean:.4f},{rpn_classification_mean:.4f},{frcnn_localization_mean:.4f}')
-                if model_type == "standard":
-                    loss_file.write(f',{frcnn_classification_mean:.4f}\n')
-                else:
-                    loss_file.write(f',{custom_classification_supermean:.4f},{custom_classification_submean:.4f}\n')
+                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_mean:.20f},{rpn_classification_mean:.20f},{frcnn_localization_mean:.20f},{frcnn_classification_mean:.20f}')
+                if model_type == "custom":
+                    loss_file.write(f',{custom_classification_supermean:.20f},{custom_classification_submean:.20f}')
+                loss_file.write('\n')
 
             if batch_idx != 0 and batch_idx % (len(dataset)//4 - 1) == 0:
                 # save state
@@ -372,7 +371,8 @@ if not eval:
                            checkpoint_name)
                 log(f"Saved checkpoint {checkpoint_name}")
 
-            scheduler.step(epoch + batch_idx / iterations_per_epoch)
+            #scheduler.step(epoch + batch_idx / iterations_per_epoch)
+        scheduler.step()
 
     log("Training done.")
     log_file.close()
@@ -431,6 +431,19 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
             ax.text(x1, y1 - 5, f"[{score:.2f}] {dataset.classes[sublabel+1]} ({dataset.radical_counts[superlabel][0]})", color='red', fontproperties=fprop)
     plt.show()
 
+
+def visualize_predictions_standard(images, boxes, scores):
+    fig, axes = plt.subplots(1, len(images), figsize=(15, 5))
+    for ax, image, im_boxes, im_scores in zip(axes, images, boxes, scores):
+        ax.imshow(T.ToPILImage()(image))
+        im_boxes = im_boxes.detach().cpu()
+        for box, score in zip(im_boxes, im_scores):
+            x1, y1, x2, y2 = box
+            ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
+                                       fill=False, color='red', linewidth=2))
+            ax.text(x1, y1 - 5, f"[{score:.2f}]", color='red')
+    plt.show()
+
 # TODO: remove background class from dataset as we are using custom classifier
 
 if eval == 'train':
@@ -464,6 +477,7 @@ if eval == 'train':
         sub_labels = torch.argmax(sub_scores, dim=1).detach().cpu().split(boxes_per_image, 0)
 
         visualize_predictions(images, pred_boxes, scores, super_labels, sub_labels)
+        #visualize_predictions_standard(images, pred_boxes, scores)
 
         answer = input("Do you want to see other images? (y/n, default is y): ").strip().lower()
 
