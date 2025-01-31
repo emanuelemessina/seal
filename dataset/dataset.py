@@ -129,14 +129,9 @@ class CharacterDataset(Dataset):
             for line in f:
                 parts = line.strip().split()
                 char = parts[0]
-                center_x, center_y, width, height = map(float, parts[1:5])
+                x_min, y_min, x_max, y_max = map(float, parts[1:5])
                 radical = parts[5]
                 font_file = parts[6]
-                # Convert center_x, center_y, width, height to x_min, y_min, x_max, y_max
-                x_min = center_x - width / 2
-                y_min = center_y - height / 2
-                x_max = center_x + width / 2
-                y_max = center_y + height / 2
                 boxes.append([x_min, y_min, x_max, y_max])
 
                 labels.append(self.labels[char])

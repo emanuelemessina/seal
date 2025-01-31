@@ -1,11 +1,17 @@
+import math
+
 import numpy as np
 from config import config
 
 BBOX_INFLATE = config["BBOX_INFLATE"]  # percentage of char width to inflate the bbox
 
 
-def calculate(x, y, width, height):
-    inflate = int(BBOX_INFLATE * width)
+def calculate(x, y, width, height, inflate='positive'):
+    if inflate is None:
+        inflate = 0
+    else:
+        inflate = int(BBOX_INFLATE * width) * (-1 if inflate == 'negative' else 1)
+
     bbox = (x - inflate, y - inflate, x + width + inflate, y + height + inflate)
     return bbox
 

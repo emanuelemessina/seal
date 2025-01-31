@@ -5,6 +5,14 @@ from PIL import Image, ImageDraw, ImageFont
 FONTS_DIR = "../fonts"
 
 
+all_characters = chardb.get_all_characters()
+
+labels = {all_characters[idx]: idx for idx in range(len(all_characters))}
+
+
+def char_to_label(char):
+    return labels[char]
+
 # generate char image
 
 def generate_random(font_size, font=None):

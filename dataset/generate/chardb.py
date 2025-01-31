@@ -13,6 +13,11 @@ def close_conn():
     conn.close()
 
 
+def get_all_characters():
+    cursor.execute("SELECT character FROM characters")
+    rows = cursor.fetchall()
+    return [row[0] for row in rows]
+
 # character extraction
 
 def extract_random_font():
