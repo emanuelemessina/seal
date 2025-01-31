@@ -35,7 +35,8 @@ from dataset.dataset import CharacterDataset
 from model.load_checkpoint import load_checkpoint
 
 parser = argparse.ArgumentParser(description='SEAL')
-parser.add_argument('--checkpoint_path', type=str, default='', help='Path to the checkpoint file ("ignore" to force no checkpoint, otherwise latest checkpoint found will be used)')
+parser.add_argument('--checkpoint_path', type=str, default='',
+                    help='Path to the checkpoint file ("ignore" to force no checkpoint, otherwise latest checkpoint found will be used)')
 parser.add_argument('--eval', type=str, default='',
                     help='Which dataset to evaluate (train|dev|test), if empty the model trains on the train dataset')
 parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use the CPU instead of CUDA')
@@ -78,7 +79,7 @@ P5	64x (4x4)
 '''
 
 anchor_generator = AnchorGenerator(
-    sizes=((16,), (50, ), (70, ),),
+    sizes=((16,), (50,), (70,),),
     aspect_ratios=((1.0, 2.0,),) * 3
 )
 rpn_head = RPNHead(backbone.out_channels, anchor_generator.num_anchors_per_location()[0])
@@ -111,7 +112,6 @@ multiscale_roi_align = MultiScaleRoIAlign(featmap_names=featmap_names, output_si
 box_roi_align = CustomRoIAlign(featmap_names=featmap_names, output_size=roi_output_size,
                                sampling_ratio=roi_sampling_ratio)
 
-
 input_features_size = backbone.out_channels * roi_output_size ** 2
 
 
@@ -125,7 +125,8 @@ class BypassHead(nn.Module):
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, num_superclasses, superclasses_groups, in_features, high_dim=4096, mid_dim=1024, funneled_dim=256):
+    def __init__(self, num_superclasses, superclasses_groups, in_features, high_dim=4096, mid_dim=1024,
+                 funneled_dim=256):
         super().__init__()
 
         self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
@@ -135,13 +136,15 @@ class CustomPredictor(nn.Module):
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.classifier_distancer = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU(), nn.Linear(high_dim, high_dim))
+        self.classifier_distancer = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU(),
+                                                  nn.Linear(high_dim, high_dim))
         self.superclassifier_funnel = nn.Linear(high_dim, mid_dim)
         self.subclassifier_funnel = nn.Linear(high_dim, mid_dim)
 
         self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 150
         # in_ch 12k, subclasses per group 50
-        self.sub_classifiers = nn.ModuleList([nn.Linear(num_superclasses + mid_dim, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
+        self.sub_classifiers = nn.ModuleList(
+            [nn.Linear(num_superclasses + mid_dim, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
 
     def forward(self, x):
         x = x.flatten(start_dim=1)
@@ -173,6 +176,7 @@ class CustomPredictor(nn.Module):
             self.sub_logits = torch.cat((self.sub_logits, sub_head_output), 1)
 
         return self.super_logits, self.sub_logits
+
 
 model = FasterRCNN(image_mean=dataset.mean, image_std=dataset.std, min_size=min_size, max_size=max_size,
                    backbone=backbone, rpn_anchor_generator=anchor_generator,
@@ -220,13 +224,16 @@ if not eval:
     date_time = time.strftime("%Y-%m-%d_%H-%M-%S")
     log_file = open(f'log_{date_time}.txt', 'a')
 
+
     def log(msg):
         print(msg)
         log_file.write(msg + '\n')
 
+
     loss_file = open(f'loss_{date_time}.csv', 'a')
 
-    loss_file.write('epoch,batch,rpn_localization_loss,rpn_classification_loss,frcnn_localization_loss,frcnn_classification_loss')
+    loss_file.write(
+        'epoch,batch,rpn_localization_loss,rpn_classification_loss,frcnn_localization_loss,frcnn_classification_loss')
     loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss')
     loss_file.write('\n')
 
@@ -258,7 +265,8 @@ if not eval:
                 gt_boxes.append(target['boxes'])
                 target['superlabels'] = target['superlabels'].long().to(device)
                 target['sublabels'] = target['labels'].long().to(device)
-                target['labels'] = torch.ones_like(target['labels']).long().to(device)  # dummy labels800 for the binary classifier
+                target['labels'] = torch.ones_like(target['labels']).long().to(
+                    device)  # dummy labels800 for the binary classifier
                 gt_sublabels.append(target['sublabels'])
                 gt_superlabels.append(target['superlabels'])
 
@@ -318,15 +326,17 @@ if not eval:
 
                 log(loss_output)
 
-                loss_file.write(f'{epoch},{batch_idx},{rpn_localization_mean:.20f},{rpn_classification_mean:.20f},{frcnn_localization_mean:.20f},{frcnn_classification_mean:.20f}')
+                loss_file.write(
+                    f'{epoch},{batch_idx},{rpn_localization_mean:.20f},{rpn_classification_mean:.20f},{frcnn_localization_mean:.20f},{frcnn_classification_mean:.20f}')
 
                 loss_file.write(f',{custom_classification_supermean:.20f},{custom_classification_submean:.20f}')
                 loss_file.write('\n')
 
-            if batch_idx != 0 and batch_idx % (len(dataset)//(batch_size*2) - 1) == 0:
+            if batch_idx != 0 and batch_idx % (len(dataset) // (batch_size * 2) - 1) == 0:
                 # save state
                 checkpoint_name = f'checkpoint_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
-                torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),  'scheduler_state_dict': scheduler.state_dict()},
+                torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),
+                            'scheduler_state_dict': scheduler.state_dict()},
                            checkpoint_name)
                 log(f"Saved checkpoint {checkpoint_name}")
 
@@ -340,11 +350,12 @@ if not eval:
 else:
     model.eval()
 
-
 from torchvision.ops import box_iou
 
 import matplotlib.font_manager as fm
+
 fprop = fm.FontProperties(fname='C:\Windows\Fonts\msjhl.ttc')
+
 
 def compute_iou(pred_boxes, gt_boxes):
     if len(pred_boxes) == 0 or len(gt_boxes) == 0:
@@ -380,35 +391,49 @@ def evaluate_detection(dataloader):
 
 def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
     fig, axes = plt.subplots(1, len(images), figsize=(15, 5))
-    for ax, image, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, boxes, scores, super_labels, sub_labels):
+    for ax, image, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, boxes, scores, super_labels,
+                                                                            sub_labels):
         ax.imshow(T.ToPILImage()(image))
         im_boxes = im_boxes.detach().cpu()
         for box, score, superlabel, sublabel in zip(im_boxes, im_scores, im_superlabels, im_sublabels):
             x1, y1, x2, y2 = box
             ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
                                        fill=False, color='red', linewidth=2))
-            ax.text(x1, y1 - 5, f"[{score:.2f}] {dataset.classes[sublabel]} ({dataset.radical_counts[superlabel][0]})", color='red', fontproperties=fprop)
+            ax.text(x1, y1 - 5, f"[{score:.2f}] {dataset.classes[sublabel]} ({dataset.radical_counts[superlabel][0]})",
+                    color='red', fontproperties=fprop)
     plt.show()
+
+
+SUPPRESSIONMAXXING_THRESH = 0.5
 
 if eval == 'train':
     print("Evaluating on Train set")
 
     while True:
 
-        images_targets = [dataset[random.randint(0, len(dataset)-1)] for _ in range(3)]
+        images_targets = [dataset[random.randint(0, len(dataset) - 1)] for _ in range(3)]
         images, targets = zip(*images_targets)
 
         outputs = model([img.to(device) for img in images])
 
         pred_boxes = []
-        pred_labels = []
-        scores = []
+        pred_scores = []
         boxes_per_image = []
         for output, target in zip(outputs, targets):
-            pred_boxes.append(output["boxes"])
-            pred_labels.append(output["labels"].detach().cpu())
-            scores.append(output["scores"].detach().cpu())
-            boxes_per_image.append(output['boxes'].shape[0])
+            boxes = output["boxes"]
+            scores = output["scores"].detach().cpu()
+
+            # low thresh suppresh
+            filtered_boxes = torch.empty(size=(0, 4)).to(device)
+            filtered_scores = []
+            for i, score in enumerate(scores):
+                if score >= SUPPRESSIONMAXXING_THRESH:
+                    filtered_boxes = torch.cat((filtered_boxes, boxes[i].reshape(1, -1)))
+                    filtered_scores.append(float(score))
+
+            pred_boxes.append(filtered_boxes)
+            pred_scores.append(filtered_scores)
+            boxes_per_image.append(len(filtered_boxes))
 
         features = model.roi_heads.box_roi_pool.features
         image_shapes = model.roi_heads.box_roi_pool.image_shapes
@@ -420,7 +445,7 @@ if eval == 'train':
         super_labels = torch.argmax(super_scores, dim=1).detach().cpu().split(boxes_per_image, 0)
         sub_labels = torch.argmax(sub_scores, dim=1).detach().cpu().split(boxes_per_image, 0)
 
-        visualize_predictions(images, pred_boxes, scores, super_labels, sub_labels)
+        visualize_predictions(images, pred_boxes, pred_scores, super_labels, sub_labels)
 
         answer = input("Do you want to see other images? (y/n, default is y): ").strip().lower()
 
@@ -428,5 +453,3 @@ if eval == 'train':
             break
 
     evaluate_detection(dataloader)
-
-
