@@ -405,7 +405,7 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
     plt.show()
 
 
-SUPPRESSIONMAXXING_THRESH = 0.5
+SUPPRESSIONMAXXING_THRESH = 0.9
 
 if eval == 'train':
     print("Evaluating on Train set")
