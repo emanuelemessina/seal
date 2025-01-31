@@ -43,7 +43,6 @@ parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use 
 parser.add_argument('--discard_optim', type=bool, default=False, help='Discard optim state dict')
 args = parser.parse_args()
 
-model_type = args.model_type
 checkpoint_path = args.checkpoint_path
 eval = args.eval
 force_cpu = args.force_cpu
@@ -211,7 +210,7 @@ loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
 lambda_superclasses = 0.99
 lambda_classes = 0.95
 
-load_checkpoint(checkpoint_path, model_type, discard_optim, model, optimizer, scheduler)
+load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler)
 
 if not eval:
 
@@ -229,8 +228,7 @@ if not eval:
     loss_file = open(f'loss_{date_time}.csv', 'a')
 
     loss_file.write('epoch,batch,rpn_localization_loss,rpn_classification_loss,frcnn_localization_loss,frcnn_classification_loss')
-    if model_type == "custom":
-        loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss')
+    loss_file.write(',custom_classification_super_loss,custom_classification_sub_loss')
     loss_file.write('\n')
 
     log(f'Started training {date_time}')
@@ -287,8 +285,8 @@ if not eval:
             loss += batch_losses['loss_rpn_box_reg']
             loss += batch_losses['loss_objectness']
             loss += batch_losses['loss_classifier']
-            if model_type == "custom":
-                loss += superloss + subloss
+
+            loss += superloss + subloss
 
             loss.backward()
 

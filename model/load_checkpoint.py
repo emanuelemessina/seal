@@ -4,13 +4,13 @@ import re
 import torch
 
 
-def load_checkpoint(checkpoint_path, model_type, discard_optim, model, optimizer, scheduler):
+def load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler):
     try:
         if checkpoint_path == 'ignore':
             print("Forced no checkpoint")
             raise Exception
         if not checkpoint_path:
-            checkpoint_files = glob.glob(f'checkpoint_{model_type}_*.pth')
+            checkpoint_files = glob.glob(f'checkpoint_*.pth')
             if len(checkpoint_files) == 0:
                 print("No checkpoint, training from scratch.")
                 raise Exception  # to break out
