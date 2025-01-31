@@ -208,14 +208,15 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.001, momentum=0.9, weight_d
 iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
 #scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iterations_per_epoch, T_mult=2, eta_min=0.0001)
 scheduler = StepLR(optimizer, step_size=1, gamma=0.1)
-loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
-loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
-lambda_superclasses = 0.99
-lambda_classes = 0.95
 
 load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler)
 
 if not eval:
+
+    loss_fn_superclass = CrossEntropyLoss(weight=dataset.superclass_weights.to(device))
+    loss_fn_class = CrossEntropyLoss(weight=dataset.class_weights.to(device))
+    lambda_superclasses = 0.99
+    lambda_classes = 0.95
 
     # Training loop
 
