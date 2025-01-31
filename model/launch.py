@@ -188,6 +188,9 @@ model = FasterRCNN(image_mean=dataset.mean, image_std=dataset.std, min_size=min_
 
 print(model)
 
+total_params = sum(p.numel() for p in model.parameters())
+print(f'Total number of parameters: {total_params}')
+
 model.to(device)
 
 # split params for different learning rates (optional)
