@@ -28,12 +28,11 @@ import torch.nn.functional as F
 import matplotlib.pyplot as plt
 from IPython.display import display, clear_output
 
-from model.load_checkpoint import load_checkpoint
-
 # Add the parent directory of the dataset module to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dataset.dataset import CharacterDataset
+from model.load_checkpoint import load_checkpoint
 
 parser = argparse.ArgumentParser(description='SEAL')
 parser.add_argument('--checkpoint_path', type=str, default='', help='Path to the checkpoint file ("ignore" to force no checkpoint, otherwise latest checkpoint found will be used)')
