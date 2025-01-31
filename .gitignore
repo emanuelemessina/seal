@@ -1,9 +1,9 @@
 # dataset
-dataset/output/images*
-dataset/output/labels*
+dataset/output/*/images*
+dataset/output/*/labels*
 dataset/output/backup
-model/loss*
-model/log*.txt
+model/*/loss*
+model/*/log*.txt
 *.rar
 checkpoint*
 

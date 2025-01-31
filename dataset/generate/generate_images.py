@@ -158,10 +158,10 @@ def arrange_random(arrangement_type, canvas, image_chars, bboxes, radicals, font
             char_anchors.append((x, y))
             # char image
             char_image, char, radical, font_filename = generated[idx]
-            char_image = perspective_distort(char_image, random.choice(['top', 'bottom', 'left', 'right']), random.random()*0.2)
+            char_image = perspective_distort(char_image, random.choice(['top', 'bottom', 'left', 'right']), random.uniform(0,0.2))
             inflate = 'positive'
             if random.random() > 0.5:
-                char_image = rotate_image(char_image, random.random()*30)
+                char_image = rotate_image(char_image, random.uniform(-30, 30))
                 inflate = 'negative'
             char_images.append(char_image)
             char_width, char_height = char_image.size  # don't trust first character, get actual

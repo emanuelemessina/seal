@@ -3,7 +3,7 @@ import pandas as pd
 
 DB_NAME = "chardb.sqlite"
 FREQUENCY_LIST_FILE = "CharFreq-Classical.xls"
-N = 1000  # Number of characters to keep
+N = 3000  # Number of characters to keep
 
 
 def get_top_n_characters_from_excel(n):

@@ -10,7 +10,7 @@ all_files = os.listdir('images')
 png_files = [f for f in all_files if f.endswith('.png')]
 num_files = len(png_files)
 
-sample_size = max(1, num_files // 5)
+sample_size = 1000
 sampled_files = random.sample(png_files, sample_size)
 images = [Image.open(os.path.join('images', f)) for f in sampled_files]
 
