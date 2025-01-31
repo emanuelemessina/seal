@@ -87,14 +87,13 @@ def load_image_mean_std(data_folder):
 
 
 class CharacterDataset(Dataset):
-    def __init__(self, data_folder, transform=None):
-        self.data_folder = data_folder
+    def __init__(self, data_folder, split='train', transform=None):
+        self.split_folder = os.path.join(data_folder, split)
         self.transform = transform
 
-        self.image_files = [f for f in os.listdir(os.path.join(data_folder, "images")) if f.endswith('.png')]
+        self.image_files = [f for f in os.listdir(os.path.join(self.split_folder, "images")) if f.endswith('.png')]
 
         self.classes = get_all_characters()
-        self.classes = ['background'] + self.classes
 
         self.labels = {self.classes[idx]: idx for idx in range(len(self.classes))}
 
@@ -103,8 +102,9 @@ class CharacterDataset(Dataset):
         self.radical_groups = group_radical_counts(self.radical_counts, self.radical_counts[0][1])
 
         self.mean, self.std = load_image_mean_std(data_folder)
-        self.class_weights = load_weights(data_folder, 'chars')
-        self.superclass_weights = load_weights(data_folder, 'radicals')
+        if split == 'train':
+            self.class_weights = load_weights(self.split_folder, 'chars')
+            self.superclass_weights = load_weights(self.split_folder, 'radicals')
 
     def __len__(self):
         return len(self.image_files)
@@ -112,14 +112,14 @@ class CharacterDataset(Dataset):
     def __getitem__(self, idx):
         # Get image file
         img_name = self.image_files[idx]
-        img_path = os.path.join(self.data_folder, "images", img_name)
+        img_path = os.path.join(self.split_folder, "images", img_name)
 
         # Open image
         image = Image.open(img_path).convert("RGB")
 
         # Get label file
         label_name = img_name.replace('.png', '.txt')
-        label_path = os.path.join(self.data_folder, "labels", label_name)
+        label_path = os.path.join(self.split_folder, "labels", label_name)
 
         # Parse labels
         boxes = []
