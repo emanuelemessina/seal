@@ -4,6 +4,8 @@ dataset/output/*/labels*
 dataset/output/backup
 model/*/loss*
 model/*/log*.txt
+model/log*.txt
+model/loss*
 *.rar
 checkpoint*
 

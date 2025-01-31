@@ -324,7 +324,7 @@ if not eval:
                 loss_file.write(f',{custom_classification_supermean:.20f},{custom_classification_submean:.20f}')
                 loss_file.write('\n')
 
-            if batch_idx != 0 and batch_idx % (len(dataset)//4 - 1) == 0:
+            if batch_idx != 0 and batch_idx % (len(dataset)//(batch_size*2) - 1) == 0:
                 # save state
                 checkpoint_name = f'checkpoint_e{epoch}_b{batch_idx}_{time.strftime("%Y-%m-%d_%H-%M-%S")}.pth'
                 torch.save({'model_state_dict': model.state_dict(), 'optimizer_state_dict': optimizer.state_dict(),  'scheduler_state_dict': scheduler.state_dict()},
