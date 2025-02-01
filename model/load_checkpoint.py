@@ -4,7 +4,7 @@ import re
 import torch
 
 
-def load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler):
+def load_checkpoint(checkpoint_path, discard_optim, model, optimizer=None, scheduler=None):
     try:
         if checkpoint_path == 'ignore':
             print("Forced no checkpoint")
@@ -20,8 +20,10 @@ def load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler)
         checkpoint = torch.load(checkpoint_path)
         model.load_state_dict(checkpoint["model_state_dict"])
         if not discard_optim:
-            optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
-            scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
+            if optimizer:
+                optimizer.load_state_dict(checkpoint["optimizer_state_dict"])
+            if scheduler:
+                scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
     except Exception as e:
         if e is FileNotFoundError:
             print(f"No checkpoint found at '{checkpoint_path}'.")
