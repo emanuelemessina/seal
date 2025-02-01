@@ -1,11 +1,11 @@
-from datetime import time
+import time
 
 import numpy as np
 import torch
 from torch.nn import CrossEntropyLoss
 from torch.optim.lr_scheduler import StepLR
 
-from model.load_checkpoint import load_checkpoint
+from load_checkpoint import load_checkpoint
 
 
 def train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, checkpoint_path, discard_optim):

@@ -1,28 +1,22 @@
 import argparse
-import glob
 import os
 import random
-import re
 import sys
-import threading
-import time
-from typing import Dict, List, Tuple
+
+import matplotlib.pyplot as plt
 import torch
 import torchvision.transforms as T
 from torch.utils.data import DataLoader
-import torch.nn.functional as F
-import matplotlib.pyplot as plt
-from IPython.display import display, clear_output
 
-from model.infer import infer
-from model.model import make_model, multiscale_roi_align
-from model.train import train
+from infer import infer
+from model import make_model
+from train import train
 
 # Add the parent directory of the dataset module to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from dataset.dataset import CharacterDataset
-from model.load_checkpoint import load_checkpoint
+from load_checkpoint import load_checkpoint
 
 parser = argparse.ArgumentParser(description='SEAL')
 parser.add_argument('--checkpoint_path', type=str, default='',

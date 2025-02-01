@@ -9,7 +9,6 @@ from torchvision.models.detection.rpn import RPNHead
 from torchvision.ops import MultiScaleRoIAlign
 import torch.nn.functional as F
 
-from model.launch import disable_hc
 
 min_size = max_size = 256  # so that the images are not resized! (and so the boxes aren't either)
 
@@ -82,6 +81,7 @@ class CustomPredictor(nn.Module):
         super().__init__()
 
         self.device = device
+        self.disable_hc = disable_hc
 
         self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
         self.cls_score_dummy = nn.Linear(mid_dim, 2)
@@ -125,7 +125,7 @@ class CustomPredictor(nn.Module):
         self.sub_logits = torch.empty(0).to(self.device)
 
         for i, sub_cl in enumerate(self.sub_classifiers):
-            if disable_hc:
+            if self.disable_hc:
                 sub_head_output = sub_cl(x_sub)
             else:
                 # predict outputs of this subclass group with this group's head, input is cat superlogits | shared features
