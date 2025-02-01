@@ -7,13 +7,11 @@
 pip install -r requirements.txt
 ```
 
-Install [pytorch](https://pytorch.org/get-started/locally/) for the specific CUDA version you have. 
-
 ## Train
 
 ```
 cd model
-python faster-rcnn.py
+python launch.py [options...]
 ```
 
 ## Credits
@@ -24,7 +22,7 @@ python faster-rcnn.py
   - font.chinaz.com
   - diyiziti.com
 
-- Kangxi dictionary: github.com/7468696e6b/kangxiDictText
-- Classical chinese frequency list: lingua.mtsu.edu
+- Kangxi dictionary: [github.com/7468696e6b/kangxiDictText]()
+- Classical chinese frequency list: [lingua.mtsu.edu]()
 
 - Background images from Pinterest
