@@ -9,6 +9,8 @@ from torchvision.models.detection.rpn import RPNHead
 from torchvision.ops import MultiScaleRoIAlign
 import torch.nn.functional as F
 
+from model.launch import disable_hc
+
 min_size = max_size = 256  # so that the images are not resized! (and so the boxes aren't either)
 
 backbone = resnet_fpn_backbone(backbone_name="resnet50", trainable_layers=5, returned_layers=[2, 3], weights=None)
@@ -74,7 +76,8 @@ class BypassHead(nn.Module):
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, device, num_superclasses, superclasses_groups, in_features, high_dim=4096, mid_dim=1024,
+    def __init__(self, device, disable_hc, num_superclasses, superclasses_groups, in_features, high_dim=4096,
+                 mid_dim=1024,
                  funneled_dim=256):
         super().__init__()
 
@@ -93,9 +96,11 @@ class CustomPredictor(nn.Module):
         self.subclassifier_funnel = nn.Linear(high_dim, mid_dim)
 
         self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 150
+
         # in_ch 12k, subclasses per group 50
         self.sub_classifiers = nn.ModuleList(
-            [nn.Linear(num_superclasses + mid_dim, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
+            [nn.Linear((num_superclasses if not disable_hc else 0) + mid_dim, superclasses_groups[i][1]) for i in
+             range(len(superclasses_groups))])
 
     def forward(self, x):
         x = x.flatten(start_dim=1)
@@ -112,31 +117,32 @@ class CustomPredictor(nn.Module):
 
         x = F.relu(self.classifier_distancer(x))
 
-        x_super = F.relu(self.superclassifier_funnel(x))
-        x_sub = F.relu(self.subclassifier_funnel(x))
-
-        self.sub_logits = torch.empty(0).to(self.device)
-
         # predict superclasses
+        x_super = F.relu(self.superclassifier_funnel(x))
         self.super_logits = self.super_classifier(x_super)
 
+        x_sub = F.relu(self.subclassifier_funnel(x))
+        self.sub_logits = torch.empty(0).to(self.device)
+
         for i, sub_cl in enumerate(self.sub_classifiers):
-            # predict outputs of this subclass group with this group's head, input is cat superlogits | shared features
-            sub_head_output = sub_cl(torch.cat((self.super_logits, x_sub), 1))
+            if disable_hc:
+                sub_head_output = sub_cl(x_sub)
+            else:
+                # predict outputs of this subclass group with this group's head, input is cat superlogits | shared features
+                sub_head_output = sub_cl(torch.cat((self.super_logits, x_sub), 1))
             # append it to the total output
             self.sub_logits = torch.cat((self.sub_logits, sub_head_output), 1)
 
         return self.super_logits, self.sub_logits
 
 
-def make_model(device, mean, std, num_superclasses, superclasses_groups):
-
+def make_model(device, mean, std, disable_hc, num_superclasses, superclasses_groups):
     model = FasterRCNN(image_mean=mean, image_std=std, min_size=min_size, max_size=max_size,
                        backbone=backbone, rpn_anchor_generator=anchor_generator,
                        rpn_head=rpn_head,
                        box_roi_pool=box_roi_align,
                        box_head=BypassHead(input_features_size),
-                       box_predictor=CustomPredictor(device, num_superclasses,
+                       box_predictor=CustomPredictor(device, disable_hc, num_superclasses,
                                                      superclasses_groups, input_features_size))
     model.to(device)
 

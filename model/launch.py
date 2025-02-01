@@ -31,12 +31,15 @@ parser.add_argument('--eval', type=str, default='',
                     help='Which dataset to evaluate (train|dev|test), if empty the model trains on the train dataset')
 parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use the CPU instead of CUDA')
 parser.add_argument('--discard_optim', type=bool, default=False, help='Discard optim state dict')
+parser.add_argument('--disable_hc', type=bool, default=False, help='Disable hierachical classification')
+
 args = parser.parse_args()
 
 checkpoint_path = args.checkpoint_path
 eval = args.eval
 force_cpu = args.force_cpu
 discard_optim = args.discard_optim
+disable_hc = args.disable_hc
 
 device = torch.device('cuda') if torch.cuda.is_available() and not force_cpu else torch.device('cpu')
 print(f'Using device: {device}')
@@ -50,7 +53,7 @@ num_classes = len(dataset.classes)
 num_superclasses = len(dataset.radical_counts)
 superclasses_groups = dataset.radical_groups
 
-model, multiscale_roi_align = make_model(device, dataset.mean, dataset.std, num_superclasses, superclasses_groups)
+model, multiscale_roi_align = make_model(device, dataset.mean, dataset.std, disable_hc, num_superclasses, superclasses_groups)
 
 print(model)
 
