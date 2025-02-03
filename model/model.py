@@ -90,15 +90,14 @@ class CustomPredictor(nn.Module):
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.classifier_distancer_1 = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU())
-        self.classifier_distancer_2 = nn.Linear(high_dim, high_dim)
+        self.classifier_distancer = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU(), nn.Linear(high_dim, high_dim))
 
         self.superclassifier_funnel = nn.Linear(high_dim, mid_dim)
         self.subclassifier_funnel = nn.Linear(high_dim, mid_dim)
 
-        self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 150
+        self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 200
 
-        # in_ch 12k, subclasses per group 50
+        # in_ch 12k, subclasses per group 300
         self.sub_classifiers = nn.ModuleList(
             [nn.Linear((num_superclasses if not disable_hc else 0) + mid_dim, superclasses_groups[i][1]) for i in
              range(len(superclasses_groups))])
@@ -116,14 +115,13 @@ class CustomPredictor(nn.Module):
     def custom_forward(self, x):
         x = x.flatten(start_dim=1)
 
-        x1 = self.classifier_distancer_1(x)
+        x1 = F.relu(self.classifier_distancer(x))
 
         # predict superclasses
         x_super = F.relu(self.superclassifier_funnel(x1))
         self.super_logits = self.super_classifier(x_super)
 
-        x2 = F.relu(self.classifier_distancer_2(x1))
-        x_sub = F.relu(self.subclassifier_funnel(x2))
+        x_sub = F.relu(self.subclassifier_funnel(x1))
         self.sub_logits = torch.empty(0).to(self.device)
 
         for i, sub_cl in enumerate(self.sub_classifiers):
