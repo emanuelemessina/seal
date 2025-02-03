@@ -84,8 +84,8 @@ class CustomPredictor(nn.Module):
         self.disable_hc = disable_hc
 
         self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
-        self.cls_score_dummy = nn.Linear(mid_dim, 2)
-        self.bbox_pred = nn.Linear(mid_dim, 2 * 4)  # hardcoded 2 classes (obj/bgd)
+        self.cls_score_dummy = nn.Linear(funneled_dim, 2)
+        self.bbox_pred = nn.Linear(funneled_dim, 2 * 4)  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
