@@ -15,6 +15,7 @@ from train import train
 # Add the parent directory of the dataset module to the Python path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+from metrics import compute_map
 from dataset.dataset import CharacterDataset
 from load_checkpoint import load_checkpoint
 
@@ -42,7 +43,6 @@ print(f'Using device: {device}')
 data_folder = '../dataset/output'
 batch_size = 2
 dataset = CharacterDataset(data_folder, split=('train' if not eval else eval), transform=T.ToTensor())
-dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
 num_classes = len(dataset.classes)
 num_superclasses = len(dataset.radical_counts)
 superclasses_groups = dataset.radical_groups
@@ -55,11 +55,13 @@ total_params = sum(p.numel() for p in model.parameters())
 print(f'Total number of parameters: {total_params}')
 
 if not eval:
+    dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=lambda x: tuple(zip(*x)))
     train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, checkpoint_path, discard_optim)
     quit()
-else:
-    load_checkpoint(checkpoint_path, discard_optim, model)
-    model.eval()
+
+load_checkpoint(checkpoint_path, discard_optim, model)
+dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda x: tuple(zip(*x)))
+model.eval()
 
 from torchvision.ops import box_iou
 
@@ -68,36 +70,28 @@ import matplotlib.font_manager as fm
 fprop = fm.FontProperties(fname='C:\Windows\Fonts\msjhl.ttc')
 
 
-def compute_iou(pred_boxes, gt_boxes):
-    if len(pred_boxes) == 0 or len(gt_boxes) == 0:
-        return torch.tensor(0.0)
-    ious = box_iou(pred_boxes, gt_boxes)
-    max_ious = ious.max(dim=1)[0]
-    return max_ious.mean().item()
-
-
-def evaluate_detection(dataloader):
-    iou_scores = []
-
+def evaluate_map(dataloader):
+    tot_gt_boxes = []
+    tot_pred_boxes = []
     with torch.no_grad():
-        for batch_idx, (images, targets) in enumerate(dataloader):
-            print(f'Evaluating batch {batch_idx + 1}/{len(dataloader)}...')
-            images = [img.to(device) for img in images]
-            outputs = model(images)
+        for idx, (image_b, targets_b) in enumerate(dataloader):
+            print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
+            image_b = [image_b[0].to(device)]
+            pred_boxes, pred_scores, super_labels, sub_labels = infer(model, multiscale_roi_align, device, image_b, targets_b, suppressionmaxxing_thresh=0)
+            tot_pred_boxes.append({'object': [[*tuple(pred_boxes[0][i].numpy()), pred_scores[0][i]] for i in range(len(pred_boxes[0]))]})
+            targets = targets_b[0]
+            tot_gt_boxes.append({'object': [targets['boxes'][i].numpy() for i in range(len(targets['boxes']))]})
 
-            for output, target in zip(outputs, targets):
-                pred_boxes = output["boxes"].detach().cpu()
-                gt_boxes = target["boxes"].cpu()
-
-                iou = compute_iou(pred_boxes, gt_boxes)
-                iou_scores.append(iou)
-
-            if batch_idx == 10:
-                # early stop
-                break
-
-    avg_iou = sum(iou_scores) / len(iou_scores)
-    print(f"Average IoU: {avg_iou:.4f}")
+    print("Calculating mAP...")
+    mean_ap, per_class_ap, precisions, recalls = compute_map(tot_pred_boxes, tot_gt_boxes, method='interp')
+    print('Mean Average Precision : {:.4f}'.format(mean_ap))
+    plt.figure()
+    plt.plot(recalls, precisions, marker='.')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall Curve')
+    plt.grid(True)
+    plt.show()
 
 
 def visualize_predictions(images, boxes, scores, super_labels, sub_labels):
@@ -131,4 +125,4 @@ while True:
     if answer not in ['y', '']:
         break
 
-evaluate_detection(dataloader)
+evaluate_map(dataloader)
