@@ -92,14 +92,14 @@ class CustomPredictor(nn.Module):
 
         self.classifier_distancer = nn.Linear(in_features, high_dim)
 
-        self.superclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
-        self.subclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
+        self.superclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
+        self.subclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
 
-        self.super_classifier = nn.Linear(funneled_dim, num_superclasses)  # superclasses 200
+        self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 200
 
         # in_ch 12k, subclasses per group 300
         self.sub_classifiers = nn.ModuleList(
-            [nn.Linear((num_superclasses if not disable_hc else 0) + funneled_dim, superclasses_groups[i][1]) for i in
+            [nn.Linear((num_superclasses if not disable_hc else 0) + mid_dim, superclasses_groups[i][1]) for i in
              range(len(superclasses_groups))])
 
     def forward(self, x):

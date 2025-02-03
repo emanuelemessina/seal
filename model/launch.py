@@ -55,5 +55,6 @@ if not eval:
     train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, checkpoint_path, discard_optim)
     quit()
 
+print(f"Evaluating on {eval} set")
 dataloader = DataLoader(dataset, batch_size=1, shuffle=False, collate_fn=lambda x: tuple(zip(*x)))
 evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim)
