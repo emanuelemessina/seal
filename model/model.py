@@ -75,31 +75,31 @@ class BypassHead(nn.Module):
 
 
 class CustomPredictor(nn.Module):
-    def __init__(self, device, disable_hc, num_superclasses, superclasses_groups, in_features, high_dim=4096,
-                 mid_dim=1024,
-                 funneled_dim=256):
+    def __init__(self, device, disable_hc, num_superclasses, superclasses_groups, in_features, high_dim=8192,
+                 mid_dim=4096,
+                 funneled_dim=1024):
         super().__init__()
 
         self.device = device
         self.disable_hc = disable_hc
 
-        self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, mid_dim))
+        self.box_distancer = nn.Sequential(nn.Linear(in_features, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
         self.cls_score_dummy = nn.Linear(mid_dim, 2)
         self.bbox_pred = nn.Linear(mid_dim, 2 * 4)  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.classifier_distancer = nn.Sequential(nn.Linear(in_features, high_dim), nn.ReLU(), nn.Linear(high_dim, high_dim))
+        self.classifier_distancer = nn.Linear(in_features, high_dim)
 
-        self.superclassifier_funnel = nn.Linear(high_dim, mid_dim)
-        self.subclassifier_funnel = nn.Linear(high_dim, mid_dim)
+        self.superclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
+        self.subclassifier_funnel = nn.Sequential(nn.Linear(high_dim, mid_dim), nn.ReLU(), nn.Linear(mid_dim, funneled_dim))
 
-        self.super_classifier = nn.Linear(mid_dim, num_superclasses)  # superclasses 200
+        self.super_classifier = nn.Linear(funneled_dim, num_superclasses)  # superclasses 200
 
         # in_ch 12k, subclasses per group 300
         self.sub_classifiers = nn.ModuleList(
-            [nn.Linear((num_superclasses if not disable_hc else 0) + mid_dim, superclasses_groups[i][1]) for i in
+            [nn.Linear((num_superclasses if not disable_hc else 0) + funneled_dim, superclasses_groups[i][1]) for i in
              range(len(superclasses_groups))])
 
     def forward(self, x):
