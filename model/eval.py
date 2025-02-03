@@ -20,11 +20,9 @@ def evaluate_map(device, model, multiscale_roi_align, dataloader):
             print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
             image_b = [image_b[0].to(device)]
             pred_boxes, pred_scores, super_labels, sub_labels = infer(model, multiscale_roi_align, device, image_b, targets_b, suppressionmaxxing_thresh=0)
-            pred_boxes = pred_boxes.detach().cpu()
-            pred_scores = pred_scores.detach().cpu()
-            tot_pred_boxes.append({'object': [[*tuple(pred_boxes[0][i].numpy()), pred_scores[0][i]] for i in range(len(pred_boxes[0]))]})
+            tot_pred_boxes.append({'object': [[*tuple(pred_boxes[0][i].cpu().numpy()), pred_scores[0][i]] for i in range(len(pred_boxes[0]))]})
             targets = targets_b[0]
-            tot_gt_boxes.append({'object': [targets['boxes'][i].numpy() for i in range(len(targets['boxes']))]})
+            tot_gt_boxes.append({'object': [targets['boxes'][i].cpu().numpy() for i in range(len(targets['boxes']))]})
 
     print("Calculating mAP...")
     mean_ap, per_class_ap, precisions, recalls = compute_map(tot_pred_boxes, tot_gt_boxes, method='interp')
