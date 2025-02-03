@@ -4,6 +4,7 @@ import sys
 
 import torch
 from torch.utils.data import DataLoader
+import torchvision.transforms as T
 
 from eval import evaluate
 from model import make_model
