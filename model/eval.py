@@ -44,7 +44,6 @@ def compute_iou(box1, box2):
     box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
 
     union = box1_area + box2_area - intersection + epsilon
-
     return intersection / union
 
 
@@ -74,22 +73,44 @@ def evaluate_image(pred_boxes, pred_scores, sub_labels, gt_boxes, gt_labels, iou
     return tp, fp, pred_scores
 
 
-def compute_class_metrics(tp, fp, scores):
-    # Sort by score descending
-    sorted_indices = np.argsort(-np.array(scores))
-    tp = tp[sorted_indices]
-    fp = fp[sorted_indices]
+def compute_class_metrics(gt_boxes, predictions, iou_threshold=0.5):
+    # Sort predictions by descending confidence
+    predictions = sorted(predictions, key=lambda x: -x[1])
+    tp = []
+    fp = []
+    matched = set()
 
-    # Cumulative sums
+    for pred_box, _ in predictions:
+        found_match = False
+
+        for gt_idx, gt_box in enumerate(gt_boxes):
+            if gt_idx in matched:
+                continue
+
+            if compute_iou(pred_box, gt_box) >= iou_threshold:
+                found_match = True
+                matched.add(gt_idx)
+                break
+
+        if found_match:
+            tp.append(1)
+            fp.append(0)
+        else:
+            tp.append(0)
+            fp.append(1)
+
+    # Cumulative sums for precision and recall
     tp_cumsum = np.cumsum(tp)
     fp_cumsum = np.cumsum(fp)
 
-    # Precision and Recall
     precision = tp_cumsum / (tp_cumsum + fp_cumsum + epsilon)
-    recall = tp_cumsum / (len(tp_cumsum) if len(tp_cumsum) > 0 else epsilon)
+    recall = tp_cumsum / (len(gt_boxes) + epsilon)
 
-    # Average precision
-    ap = auc(recall, precision) if len(recall) > 0 else 0
+    # Compute AP using trapezoidal rule (AUC)
+    if len(recall) > 1:
+        ap = auc(recall, precision)
+    else:
+        ap = 0
 
     return precision, recall, ap
 
@@ -105,6 +126,10 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
     recalls = defaultdict(list)
     average_precisions = {}
 
+    all_gt_boxes = defaultdict(list)  # Stores ground truth boxes per class
+    all_gt_labels = defaultdict(list)  # Stores labels per class
+    all_predictions = defaultdict(list)  # Stores predictions (boxes, scores) per class
+
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
 
@@ -115,28 +140,31 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
         pred_boxes, pred_scores, super_labels, sub_labels = infer(
             model, multiscale_roi_align, device, image_b, targets_b, suppressionmaxxing_thresh=0
         )
-        pred_boxes, pred_scores, sub_labels = pred_boxes[0], pred_scores[0], sub_labels[0]
+        pred_boxes, pred_scores, sub_labels = pred_boxes[0], pred_scores[0], sub_labels[0].tolist()
 
         # Ground truth
         gt_boxes = targets["boxes"].tolist()
         gt_labels = targets["labels"].tolist()
 
-        # Evaluate for each class
-        tp, fp, scores = evaluate_image(pred_boxes, pred_scores, sub_labels, gt_boxes, gt_labels)
+        # Store per-class predictions and ground truths
+        for box, label in zip(gt_boxes, gt_labels):
+            all_gt_boxes[label].append(box)
+            all_gt_labels[label].append(1)  # Mark this as unmatched initially
 
-        for label in set(sub_labels + gt_labels):
-            class_tp = np.array([tp[i] for i in range(len(tp)) if sub_labels[i] == label])
-            class_fp = np.array([fp[i] for i in range(len(fp)) if sub_labels[i] == label])
-            class_scores = [scores[i] for i in range(len(scores)) if sub_labels[i] == label]
+        for box, score, label in zip(pred_boxes, pred_scores, sub_labels):
+            all_predictions[label].append((box, score))
 
-            precision, recall, ap = compute_class_metrics(class_tp, class_fp, class_scores)
+        if idx == 2:
+            break
 
-            precisions[label].append(precision)
-            recalls[label].append(recall)
-            average_precisions[label] = ap
+    average_precisions = {}
+    for label in all_gt_boxes.keys():
+        precision, recall, ap = compute_class_metrics(all_gt_boxes[label], all_predictions[label])
+        average_precisions[label] = ap
+        print(f"Class {label}: AP = {ap:.4f}")
 
-    map_score = np.mean(list(average_precisions.values())) if average_precisions else 0
-    print(f"mAP: {map_score:.4f}")
+    mAP = np.mean(list(average_precisions.values())) if average_precisions else 0
+    print(f"Total mAP: {mAP:.4f}")
 
     while True:
 
