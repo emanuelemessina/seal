@@ -97,7 +97,9 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
     all_precision = []
     all_recall = []
 
-    confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes))
+    BACKGROUND_CLASS = len(dataset.classes)  # background index
+
+    confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes)+1)  # add background
 
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
@@ -134,9 +136,22 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
             pred_boxes, sub_labels, gt_boxes, gt_labels
         )
 
+        # Add background class for unmatched predictions
+        pred_classes = tp_labels + fp_labels
+        target_classes = tp_labels + fn_labels
+
+        pred_mismatch = len(sub_labels) - len(gt_labels)
+        background_pad = [BACKGROUND_CLASS] * abs(len(fp_labels) - len(fn_labels))
+        if pred_mismatch > 0:  # more false positives (pred is longer)
+            target_classes += background_pad
+        elif pred_mismatch < 0:  # mroe false negatives (target is longer)
+            pred_classes += background_pad
+
         # Update confusion matrix
-        confmat.update(torch.tensor(tp_labels + fp_labels),  # Predictions
-                       torch.tensor(tp_labels + fn_labels))  # Targets
+        confmat.update(
+            torch.tensor(pred_classes),
+            torch.tensor(target_classes)
+        )
 
         if idx == 200:
             break
