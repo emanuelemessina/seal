@@ -10,6 +10,7 @@ opencv-python
 scikit-learn
 torchmetrics
 torchmetrics[detection]
+seaborn
 
 --index-url https://download.pytorch.org/whl/cu126
 torch
@@ -17,3 +18,5 @@ torchaudio
 torchvision
 
 
+
+seaborn

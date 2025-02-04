@@ -30,6 +30,8 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels, datas
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchmetrics import ConfusionMatrix
 from collections import defaultdict
+import seaborn as sns
+
 
 def calculate_iou(box1, box2):
     # Intersection coordinates
@@ -83,6 +85,7 @@ def match_predictions(pred_boxes, pred_labels, gt_boxes, gt_labels, iou_thresh=0
 
     return tp_labels, fp_labels, fn_labels
 
+
 def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim):
     load_checkpoint(checkpoint_path, discard_optim, model)
 
@@ -90,12 +93,6 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
 
     # Initialize the metric
     map_metric = MeanAveragePrecision()
-
-    class_correct = defaultdict(int)
-    class_total = defaultdict(int)
-
-    all_precision = []
-    all_recall = []
 
     BACKGROUND_CLASS = len(dataset.classes)  # background index
 
@@ -162,33 +159,14 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
 
     # Get the confusion matrix
     conf_matrix = confmat.compute()
-    print("Confusion Matrix:")
-    print(conf_matrix)
 
     # Plot the confusion matrix as a heatmap
-    import seaborn as sns
 
     plt.figure(figsize=(10, 8))
     sns.heatmap(conf_matrix.int().cpu(), annot=True, fmt="d", cmap="Blues")
     plt.xlabel('Predicted Labels')
     plt.ylabel('True Labels')
     plt.title('Confusion Matrix')
-    plt.show()
-
-    # Extract precision-recall for plotting
-    for class_id in results["classes"]:
-        precision = results["precision"][class_id]
-        recall = results["recall"][class_id]
-        all_precision.append(precision.tolist())
-        all_recall.append(recall.tolist())
-
-    # Plot PR curve for each class
-    for idx, (precision, recall) in enumerate(zip(all_precision, all_recall)):
-        plt.plot(recall, precision, label=f'Class {idx}')
-    plt.xlabel('Recall')
-    plt.ylabel('Precision')
-    plt.title('Precision-Recall Curve')
-    plt.legend()
     plt.show()
 
     while True:
