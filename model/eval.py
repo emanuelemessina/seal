@@ -47,13 +47,11 @@ def calculate_iou(box1, box2):
     return inter_area / union_area if union_area > 0 else 0
 
 def match_predictions(pred_boxes, pred_labels, gt_boxes, gt_labels, iou_thresh=0.5):
-    # Initialize TP, FP, FN lists
     matched_indices = set()
     tp_labels = []
     fp_labels = []
     unmatched_gt_labels = gt_labels.tolist()
 
-    # Iterate over predictions and match to ground truth
     for pred_idx, pred_box in enumerate(pred_boxes):
         best_iou = 0
         best_gt_idx = -1
@@ -61,21 +59,26 @@ def match_predictions(pred_boxes, pred_labels, gt_boxes, gt_labels, iou_thresh=0
         for gt_idx, gt_box in enumerate(gt_boxes):
             if gt_idx in matched_indices:
                 continue
+
             iou = calculate_iou(pred_box.tolist(), gt_box.tolist())
             if iou > best_iou:
                 best_iou = iou
                 best_gt_idx = gt_idx
 
-        if best_iou >= iou_thresh:
-            # Match found; count as TP
-            tp_labels.append(pred_labels[pred_idx].item())
-            matched_indices.add(best_gt_idx)
-            unmatched_gt_labels.remove(gt_labels[best_gt_idx].item())
+        if best_iou >= iou_thresh and best_gt_idx != -1:
+            # this was the best matching bb, check label
+            if pred_labels[pred_idx] == gt_labels[best_gt_idx]:
+                # matching label -> tp
+                tp_labels.append(pred_labels[pred_idx].item())
+                unmatched_gt_labels.remove(gt_labels[best_gt_idx].item())
+                matched_indices.add(best_gt_idx)
+            else:  # wrong label -> fp
+                fp_labels.append(pred_labels[pred_idx].item())
         else:
-            # No match; count as FP
+            # No match or low IoU; count as FP
             fp_labels.append(pred_labels[pred_idx].item())
 
-    # Remaining GT boxes are false negatives
+    # Remaining unmatched ground truths are FNs
     fn_labels = unmatched_gt_labels
 
     return tp_labels, fp_labels, fn_labels
@@ -102,39 +105,33 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
         image_b = [image_b[0].to(device)]
         targets = targets_b[0]
 
-        gt_boxes = targets["boxes"]
-        gt_labels = targets["labels"]
+        gt_boxes = targets["boxes"].detach().cpu()
+        gt_labels = targets["labels"].detach().cpu()
 
         # Get model predictions
         pred_boxes, pred_scores, _, sub_labels = infer(
             model, multiscale_roi_align, device, image_b, targets_b
         )
-        pred_boxes, pred_scores, sub_labels = pred_boxes[0], pred_scores[0], sub_labels[0].tolist()
+        pred_boxes, pred_scores, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), sub_labels[0].detach().cpu()
 
         # Format predictions and targets
         predictions = [{
-            "boxes": pred_boxes.detach().cpu(),
-            "scores": torch.tensor(pred_scores),
-            "labels": torch.tensor(sub_labels)
+            "boxes": pred_boxes,
+            "scores": pred_scores,
+            "labels": sub_labels
         }]
 
         targets_formatted = [{
-            "boxes": gt_boxes.detach().cpu(),
-            "labels": gt_labels.detach().cpu()
+            "boxes": gt_boxes,
+            "labels": gt_labels
         }]
 
         # Update the mAP metric
         map_metric.update(predictions, targets_formatted)
 
-        # Count correct predictions per class (assuming IoU threshold already applied)
-        for gt_label in gt_labels.tolist():
-            if gt_label in sub_labels:
-                class_correct[gt_label] += 1
-            class_total[gt_label] += 1
-
         # Perform IoU-based matching
         tp_labels, fp_labels, fn_labels = match_predictions(
-            pred_boxes[0], sub_labels, gt_boxes, gt_labels
+            pred_boxes, sub_labels, gt_boxes, gt_labels
         )
 
         # Update confusion matrix
