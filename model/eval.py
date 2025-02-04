@@ -26,109 +26,26 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels, datas
                     color='red', fontproperties=fprop)
     plt.show()
 
-epsilon = 1e-8  # Small value to prevent division by zero
 
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
+from torchmetrics import ConfusionMatrix
 from collections import defaultdict
-import numpy as np
-
-from sklearn.metrics import auc
-
-def compute_iou(box1, box2):
-    x1 = max(box1[0], box2[0])
-    y1 = max(box1[1], box2[1])
-    x2 = min(box1[2], box2[2])
-    y2 = min(box1[3], box2[3])
-
-    intersection = max(0, x2 - x1) * max(0, y2 - y1)
-    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
-    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
-
-    union = box1_area + box2_area - intersection + epsilon
-    return intersection / union
-
-
-def evaluate_image(pred_boxes, pred_scores, sub_labels, gt_boxes, gt_labels, iou_threshold=0.5):
-    matched_gt = set()
-    tp = np.zeros(len(pred_boxes))
-    fp = np.zeros(len(pred_boxes))
-
-    for pred_idx, (box, score, label) in enumerate(zip(pred_boxes, pred_scores, sub_labels)):
-        best_iou = 0
-        best_gt_idx = -1
-
-        for gt_idx, (gt_box, gt_label) in enumerate(zip(gt_boxes, gt_labels)):
-            if gt_label == label and gt_idx not in matched_gt:
-                iou = compute_iou(box, gt_box)
-                if iou > best_iou:
-                    best_iou = iou
-                    best_gt_idx = gt_idx
-
-        if best_iou >= iou_threshold and best_gt_idx != -1:
-            tp[pred_idx] = 1
-            matched_gt.add(best_gt_idx)
-        else:
-            fp[pred_idx] = 1
-
-    # Return true positives, false positives, and sorted scores
-    return tp, fp, pred_scores
-
-
-def compute_class_metrics(gt_boxes, predictions, iou_threshold=0.5):
-    # Sort predictions by descending confidence
-    predictions = sorted(predictions, key=lambda x: -x[1])
-    tp = []
-    fp = []
-    matched = set()
-
-    for pred_box, _ in predictions:
-        found_match = False
-
-        for gt_idx, gt_box in enumerate(gt_boxes):
-            if gt_idx in matched:
-                continue
-
-            if compute_iou(pred_box, gt_box) >= iou_threshold:
-                found_match = True
-                matched.add(gt_idx)
-                break
-
-        if found_match:
-            tp.append(1)
-            fp.append(0)
-        else:
-            tp.append(0)
-            fp.append(1)
-
-    # Cumulative sums for precision and recall
-    tp_cumsum = np.cumsum(tp)
-    fp_cumsum = np.cumsum(fp)
-
-    precision = tp_cumsum / (tp_cumsum + fp_cumsum + epsilon)
-    recall = tp_cumsum / (len(gt_boxes) + epsilon)
-
-    # Compute AP using trapezoidal rule (AUC)
-    if len(recall) > 1:
-        ap = auc(recall, precision)
-    else:
-        ap = 0
-
-    return precision, recall, ap
-
 
 def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim):
-
     load_checkpoint(checkpoint_path, discard_optim, model)
 
     model.eval()
 
-    # Metrics to compute
-    precisions = defaultdict(list)
-    recalls = defaultdict(list)
-    average_precisions = {}
+    # Initialize the metric
+    map_metric = MeanAveragePrecision()
 
-    all_gt_boxes = defaultdict(list)  # Stores ground truth boxes per class
-    all_gt_labels = defaultdict(list)  # Stores labels per class
-    all_predictions = defaultdict(list)  # Stores predictions (boxes, scores) per class
+    class_correct = defaultdict(int)
+    class_total = defaultdict(int)
+
+    all_precision = []
+    all_recall = []
+
+    confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes))
 
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
@@ -136,35 +53,78 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
         image_b = [image_b[0].to(device)]
         targets = targets_b[0]
 
-        # Get predictions
-        pred_boxes, pred_scores, super_labels, sub_labels = infer(
-            model, multiscale_roi_align, device, image_b, targets_b, suppressionmaxxing_thresh=0
+        gt_boxes = targets["boxes"]
+        gt_labels = targets["labels"]
+
+        # Get model predictions
+        pred_boxes, pred_scores, _, sub_labels = infer(
+            model, multiscale_roi_align, device, image_b, targets_b
         )
         pred_boxes, pred_scores, sub_labels = pred_boxes[0], pred_scores[0], sub_labels[0].tolist()
 
-        # Ground truth
-        gt_boxes = targets["boxes"].tolist()
-        gt_labels = targets["labels"].tolist()
+        # Format predictions and targets
+        predictions = [{
+            "boxes": pred_boxes.detach().cpu(),
+            "scores": pred_scores.detach().cpu(),
+            "labels": torch.tensor(sub_labels)
+        }]
 
-        # Store per-class predictions and ground truths
-        for box, label in zip(gt_boxes, gt_labels):
-            all_gt_boxes[label].append(box)
-            all_gt_labels[label].append(1)  # Mark this as unmatched initially
+        targets_formatted = [{
+            "boxes": gt_boxes.detach().cpu(),
+            "labels": gt_labels.detach().cpu()
+        }]
 
-        for box, score, label in zip(pred_boxes, pred_scores, sub_labels):
-            all_predictions[label].append((box, score))
+        # Update the mAP metric
+        map_metric.update(predictions, targets_formatted)
 
-        if idx == 2:
+        # Count correct predictions per class (assuming IoU threshold already applied)
+        for gt_label in gt_labels.tolist():
+            if gt_label in sub_labels:
+                class_correct[gt_label] += 1
+            class_total[gt_label] += 1
+
+        confmat.update(
+            torch.tensor(sub_labels),
+            gt_labels
+        )
+
+        if idx == 200:
             break
 
-    average_precisions = {}
-    for label in all_gt_boxes.keys():
-        precision, recall, ap = compute_class_metrics(all_gt_boxes[label], all_predictions[label])
-        average_precisions[label] = ap
-        print(f"Class {label}: AP = {ap:.4f}")
+    # Compute mAP and extract precision-recall stats
+    results = map_metric.compute()
+    print("Final mAP:", results["map"].item())
 
-    mAP = np.mean(list(average_precisions.values())) if average_precisions else 0
-    print(f"Total mAP: {mAP:.4f}")
+    # Get the confusion matrix
+    conf_matrix = confmat.compute()
+    print("Confusion Matrix:")
+    print(conf_matrix)
+
+    # Plot the confusion matrix as a heatmap
+    import seaborn as sns
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(conf_matrix.int().cpu(), annot=True, fmt="d", cmap="Blues")
+    plt.xlabel('Predicted Labels')
+    plt.ylabel('True Labels')
+    plt.title('Confusion Matrix')
+    plt.show()
+
+    # Extract precision-recall for plotting
+    for class_id in results["classes"]:
+        precision = results["precision"][class_id]
+        recall = results["recall"][class_id]
+        all_precision.append(precision.tolist())
+        all_recall.append(recall.tolist())
+
+    # Plot PR curve for each class
+    for idx, (precision, recall) in enumerate(zip(all_precision, all_recall)):
+        plt.plot(recall, precision, label=f'Class {idx}')
+    plt.xlabel('Recall')
+    plt.ylabel('Precision')
+    plt.title('Precision-Recall Curve')
+    plt.legend()
+    plt.show()
 
     while True:
 
