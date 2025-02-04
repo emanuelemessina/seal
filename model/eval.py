@@ -31,6 +31,55 @@ from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchmetrics import ConfusionMatrix
 from collections import defaultdict
 
+def calculate_iou(box1, box2):
+    # Intersection coordinates
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
+
+    # Compute intersection and area
+    inter_area = max(0, x2 - x1) * max(0, y2 - y1)
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
+
+    union_area = box1_area + box2_area - inter_area
+    return inter_area / union_area if union_area > 0 else 0
+
+def match_predictions(pred_boxes, pred_labels, gt_boxes, gt_labels, iou_thresh=0.5):
+    # Initialize TP, FP, FN lists
+    matched_indices = set()
+    tp_labels = []
+    fp_labels = []
+    unmatched_gt_labels = gt_labels.tolist()
+
+    # Iterate over predictions and match to ground truth
+    for pred_idx, pred_box in enumerate(pred_boxes):
+        best_iou = 0
+        best_gt_idx = -1
+
+        for gt_idx, gt_box in enumerate(gt_boxes):
+            if gt_idx in matched_indices:
+                continue
+            iou = calculate_iou(pred_box.tolist(), gt_box.tolist())
+            if iou > best_iou:
+                best_iou = iou
+                best_gt_idx = gt_idx
+
+        if best_iou >= iou_thresh:
+            # Match found; count as TP
+            tp_labels.append(pred_labels[pred_idx].item())
+            matched_indices.add(best_gt_idx)
+            unmatched_gt_labels.remove(gt_labels[best_gt_idx].item())
+        else:
+            # No match; count as FP
+            fp_labels.append(pred_labels[pred_idx].item())
+
+    # Remaining GT boxes are false negatives
+    fn_labels = unmatched_gt_labels
+
+    return tp_labels, fp_labels, fn_labels
+
 def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim):
     load_checkpoint(checkpoint_path, discard_optim, model)
 
@@ -65,7 +114,7 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
         # Format predictions and targets
         predictions = [{
             "boxes": pred_boxes.detach().cpu(),
-            "scores": pred_scores.detach().cpu(),
+            "scores": torch.tensor(pred_scores),
             "labels": torch.tensor(sub_labels)
         }]
 
@@ -83,10 +132,14 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
                 class_correct[gt_label] += 1
             class_total[gt_label] += 1
 
-        confmat.update(
-            torch.tensor(sub_labels),
-            gt_labels
+        # Perform IoU-based matching
+        tp_labels, fp_labels, fn_labels = match_predictions(
+            pred_boxes[0], sub_labels, gt_boxes, gt_labels
         )
+
+        # Update confusion matrix
+        confmat.update(torch.tensor(tp_labels + fp_labels),  # Predictions
+                       torch.tensor(tp_labels + fn_labels))  # Targets
 
         if idx == 200:
             break
