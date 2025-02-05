@@ -36,7 +36,7 @@ disable_hc = args.disable_hc
 evaluate_what = []
 if args.visual_inspect:
     evaluate_what.append('visual')
-if args.metrics:
+if args.calc_metrics:
     evaluate_what.append('metrics')
 
 device = torch.device('cuda') if torch.cuda.is_available() and not force_cpu else torch.device('cpu')
