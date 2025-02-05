@@ -33,7 +33,7 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels, datas
     plt.show()
 
 
-def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim):
+def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim, max_images=4000):
     load_checkpoint(checkpoint_path, discard_optim, model)
 
     model.eval()
@@ -62,7 +62,7 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
 
         confmat_update(confmat, gt_boxes, gt_labels, pred_boxes, sub_labels)
 
-        if idx == 10:
+        if max_images is not None and idx == max_images:
             break
 
     print("Computing metrics...")

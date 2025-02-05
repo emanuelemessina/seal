@@ -19,7 +19,7 @@ parser = argparse.ArgumentParser(description='SEAL')
 parser.add_argument('--checkpoint_path', type=str, default='',
                     help='Path to the checkpoint file ("ignore" to force no checkpoint, otherwise latest checkpoint found will be used)')
 parser.add_argument('--eval', type=str, default='',
-                    help='Which dataset to evaluate (train|dev|test), if empty the model trains on the train dataset')
+                    help='Which dataset to evaluate (train|test), if empty the model trains on the train dataset')
 parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use the CPU instead of CUDA')
 parser.add_argument('--discard_optim', type=bool, default=False, help='Discard optim state dict')
 parser.add_argument('--disable_hc', type=bool, default=False, help='Disable hierachical classification')
@@ -57,4 +57,4 @@ if not eval:
 
 print(f"Evaluating on {eval} set")
 dataloader = DataLoader(dataset, batch_size=1, shuffle=(True if eval == 'train' else False), collate_fn=lambda x: tuple(zip(*x)))
-evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim)
+evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim, max_images=(10 if eval == 'train' else None))
