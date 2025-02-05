@@ -1,153 +1,157 @@
+import numpy as np
 import torch
 from collections import defaultdict
-from sklearn.metrics import auc
+
+from matplotlib import pyplot as plt
 
 from infer import infer
 
 
-def calculate_metrics(dataloader, model, multiscale_roi_align, device, iou_threshold=0.5):
-    # Initialize dictionaries to store TP, FP, and FN for each class
-    class_tp = defaultdict(list)
-    class_fp = defaultdict(list)
-    class_fn = defaultdict(list)
+def calculate_iou(box1, box2):
+    # Intersection coordinates
+    x1 = max(box1[0], box2[0])
+    y1 = max(box1[1], box2[1])
+    x2 = min(box1[2], box2[2])
+    y2 = min(box1[3], box2[3])
 
-    # Process each image in the dataloader
-    for idx, (image_b, targets_b) in enumerate(dataloader):
-        print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
-        image_b = [image_b[0].to(device)]
-        targets = targets_b[0]
+    # Compute intersection and area
+    inter_area = max(0, x2 - x1) * max(0, y2 - y1)
+    box1_area = (box1[2] - box1[0]) * (box1[3] - box1[1])
+    box2_area = (box2[2] - box2[0]) * (box2[3] - box2[1])
 
-        # Get predictions
-        pred_boxes, pred_scores, super_labels, sub_labels = infer(model, multiscale_roi_align, device, image_b, targets_b, suppressionmaxxing_thresh=0)
-        pred_boxes = pred_boxes[0]
-        pred_scores = pred_scores[0]
-        super_labels = super_labels[0]
-        sub_labels = sub_labels[0]
-
-        # Ground truth
-        gt_boxes = targets['boxes']
-        gt_labels = targets['labels']
-
-        # Match predictions with ground truth
-        for label in torch.unique(gt_labels):
-            label = label.item()
-
-            # Get predictions and ground truth for this class
-            pred_mask = (sub_labels == label)
-            gt_mask = (gt_labels == label)
-
-            pred_boxes_class = pred_boxes[pred_mask]
-            pred_scores_class = [pred_scores[i] for i, mask in enumerate(pred_mask) if mask]
-            gt_boxes_class = gt_boxes[gt_mask]
-
-            # Sort predictions by confidence score
-            sorted_indices = torch.argsort(torch.tensor(pred_scores_class), descending=True)
-            pred_boxes_class = pred_boxes_class[sorted_indices]
-            pred_scores_class = [pred_scores_class[i] for i in sorted_indices]
-
-            # Initialize TP and FP for this class
-            tp = torch.zeros(len(pred_boxes_class), dtype=torch.bool)
-            fp = torch.zeros(len(pred_boxes_class), dtype=torch.bool)
-
-            # Match predictions to ground truth
-            for i, pred_box in enumerate(pred_boxes_class):
-                if len(gt_boxes_class) == 0:
-                    fp[i] = True
-                    continue
-
-                # Calculate IoU with all ground truth boxes
-                ious = box_iou(pred_box.unsqueeze(0), gt_boxes_class)
-                max_iou, gt_idx = torch.max(ious, dim=1)
-
-                if max_iou >= iou_threshold:
-                    tp[i] = True
-                    gt_boxes_class = torch.cat([gt_boxes_class[:gt_idx], gt_boxes_class[gt_idx + 1:]])
-                else:
-                    fp[i] = True
-
-            # Store TP and FP for this class
-            class_tp[label].append(tp)
-            class_fp[label].append(fp)
-            class_fn[label].append(len(gt_boxes_class))
-
-    # Calculate precision, recall, AP, and mAP
-    class_metrics = {}
-    for label in class_tp.keys():
-        tp = torch.cat(class_tp[label])
-        fp = torch.cat(class_fp[label])
-        fn = sum(class_fn[label])
-
-        # Precision and Recall
-        precision = torch.sum(tp) / (torch.sum(tp) + torch.sum(fp) + 1e-10)
-        recall = torch.sum(tp) / (torch.sum(tp) + fn + 1e-10)
-
-        # Average Precision (AP) using the area method
-        tp_cumsum = torch.cumsum(tp, dim=0)
-        fp_cumsum = torch.cumsum(fp, dim=0)
-        recalls = tp_cumsum / (torch.sum(tp) + fn + 1e-10)
-        precisions = tp_cumsum / (tp_cumsum + fp_cumsum + 1e-10)
-
-        # Append zero to make the curve start at (0, 0)
-        recalls = torch.cat([torch.tensor([0.0]), recalls])
-        precisions = torch.cat([torch.tensor([1.0]), precisions])
-
-        # Calculate AP using the area under the precision-recall curve
-        ap = auc(recalls.numpy(), precisions.numpy())
-
-        # Store metrics for this class
-        class_metrics[label] = {
-            'precision': precision.item(),
-            'recall': recall.item(),
-            'ap': ap
-        }
-
-    # Calculate mean AP (mAP)
-    mean_ap = sum([metrics['ap'] for metrics in class_metrics.values()]) / len(class_metrics)
-
-    return class_metrics, mean_ap
+    union_area = box1_area + box2_area - inter_area
+    return inter_area / union_area if union_area > 0 else 0
 
 
-def box_iou(boxes1, boxes2):
-    """
-    Calculate IoU between two sets of boxes.
-    Args:
-        boxes1 (Tensor): Shape (N, 4)
-        boxes2 (Tensor): Shape (M, 4)
-    Returns:
-        iou (Tensor): Shape (N, M)
-    """
-    # Calculate intersection areas
-    inter = intersection(boxes1, boxes2)
-    area1 = box_area(boxes1)
-    area2 = box_area(boxes2)
-    union = area1.unsqueeze(1) + area2.unsqueeze(0) - inter
-    iou = inter / union
-    return iou
+def match_predictions(pred_boxes, pred_labels, gt_boxes, gt_labels, iou_thresh=0.5):
+    matched_indices = set()
+    tp_labels = []
+    fp_labels = []
+    unmatched_gt_labels = gt_labels.tolist()
+
+    for pred_idx, pred_box in enumerate(pred_boxes):
+        best_iou = 0
+        best_gt_idx = -1
+
+        for gt_idx, gt_box in enumerate(gt_boxes):
+            if gt_idx in matched_indices:
+                continue
+
+            iou = calculate_iou(pred_box.tolist(), gt_box.tolist())
+            if iou > best_iou:
+                best_iou = iou
+                best_gt_idx = gt_idx
+
+        if best_iou >= iou_thresh and best_gt_idx != -1:
+            # this was the best matching bb, check label
+            if pred_labels[pred_idx] == gt_labels[best_gt_idx]:
+                # matching label -> tp
+                tp_labels.append(pred_labels[pred_idx].item())
+                unmatched_gt_labels.remove(gt_labels[best_gt_idx].item())
+                matched_indices.add(best_gt_idx)
+            else:  # wrong label -> fp
+                fp_labels.append(pred_labels[pred_idx].item())
+        else:
+            # No match or low IoU; count as FP
+            fp_labels.append(pred_labels[pred_idx].item())
+
+    # Remaining unmatched ground truths are FNs
+    fn_labels = unmatched_gt_labels
+
+    return tp_labels, fp_labels, fn_labels
 
 
-def intersection(boxes1, boxes2):
-    """
-    Calculate intersection areas between two sets of boxes.
-    Args:
-        boxes1 (Tensor): Shape (N, 4)
-        boxes2 (Tensor): Shape (M, 4)
-    Returns:
-        inter (Tensor): Shape (N, M)
-    """
-    x1 = torch.max(boxes1[:, 0].unsqueeze(1), boxes2[:, 0].unsqueeze(0))
-    y1 = torch.max(boxes1[:, 1].unsqueeze(1), boxes2[:, 1].unsqueeze(0))
-    x2 = torch.min(boxes1[:, 2].unsqueeze(1), boxes2[:, 2].unsqueeze(0))
-    y2 = torch.min(boxes1[:, 3].unsqueeze(1), boxes2[:, 3].unsqueeze(0))
-    inter = torch.clamp(x2 - x1, min=0) * torch.clamp(y2 - y1, min=0)
-    return inter
+def map_update(map_metric, gt_boxes, gt_labels, pred_boxes, pred_scores, sub_labels):
+    # Format predictions and targets
+    predictions = [{
+        "boxes": pred_boxes,
+        "scores": pred_scores,
+        "labels": sub_labels
+    }]
+
+    targets_formatted = [{
+        "boxes": gt_boxes,
+        "labels": gt_labels
+    }]
+
+    # Update the mAP metric
+    map_metric.update(predictions, targets_formatted)
 
 
-def box_area(boxes):
-    """
-    Calculate area of boxes.
-    Args:
-        boxes (Tensor): Shape (N, 4)
-    Returns:
-        area (Tensor): Shape (N,)
-    """
-    return (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
+def confmat_update(confmat, gt_boxes, gt_labels, pred_boxes, sub_labels):
+
+    BACKGROUND_CLASS = confmat.num_classes - 1  # background class label
+
+    # Perform IoU-based matching
+    tp_labels, fp_labels, fn_labels = match_predictions(
+        pred_boxes, sub_labels, gt_boxes, gt_labels
+    )
+
+    # Add background class for unmatched predictions
+    pred_classes = tp_labels + fp_labels
+    target_classes = tp_labels + fn_labels
+
+    pred_mismatch = len(sub_labels) - len(gt_labels)
+    background_pad = [BACKGROUND_CLASS] * abs(len(fp_labels) - len(fn_labels))
+    if pred_mismatch > 0:  # more false positives (pred is longer)
+        target_classes += background_pad
+    elif pred_mismatch < 0:  # mroe false negatives (target is longer)
+        pred_classes += background_pad
+
+    # Update confusion matrix
+    confmat.update(
+        torch.tensor(pred_classes),
+        torch.tensor(target_classes)
+    )
+
+
+def plot_per_class_metrics(map_results):
+    results = map_results
+    mar_100_per_class = [max(0, val) for val in results['mar_100_per_class'].tolist()]
+    map_per_class = [max(0, val) for val in results['map_per_class'].tolist()]
+    classes = results['classes'].tolist()
+    x = np.arange(len(classes))  # the label locations
+    width = 0.35  # the width of the bars
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    rects1 = ax.bar(x - width / 2, mar_100_per_class, width, label='mAR')
+    rects2 = ax.bar(x + width / 2, map_per_class, width, label='mAP@0.75')
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_xlabel('Classes')
+    ax.set_ylabel('Value')
+    ax.set_title('mAR and mAP per class')
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.legend()
+
+    fig.tight_layout()
+
+    plt.show()
+
+
+def draw_confmat(confmat):
+    # Get the confusion matrix
+    conf_matrix = confmat.compute().numpy()
+
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    conf_matrix = np.divide(
+        conf_matrix, row_sums, out=np.zeros_like(conf_matrix, dtype=float), where=row_sums != 0
+    )
+
+    print("Writing confusion matrix...")
+
+    plt.figure(figsize=(12, 10))  # Set larger figure size for better resolution
+    plt.imshow(conf_matrix, cmap="Blues")
+    plt.colorbar()
+
+    # Add axis labels and ticks
+    plt.xlabel("Predicted Labels")
+    plt.ylabel("True Labels")
+    plt.title("Confusion Matrix")
+
+    # Save without displaying
+    plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Confusion matrix saved.")

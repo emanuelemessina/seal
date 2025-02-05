@@ -12,9 +12,8 @@ import arrangements
 import backgrounds
 import bbox as bb
 
-from config import MIN_FONT_SIZE, MAX_FONT_SIZE, MAX_CHARACTERS, NUM_IMAGES
-from dataset.generate.chars import char_to_label
-from dataset.generate.config import CANVAS_SIZE
+from config import MIN_FONT_SIZE, MAX_FONT_SIZE, MAX_CHARACTERS, NUM_IMAGES, CANVAS_SIZE
+from chars import char_to_label
 
 # files
 
