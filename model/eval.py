@@ -33,15 +33,23 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels, datas
     plt.show()
 
 
-def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim, max_images=4000):
+def evaluate(what, device, model, multiscale_roi_align, dataset, dataloader, checkpoint_path, discard_optim, max_images):
     load_checkpoint(checkpoint_path, discard_optim, model)
 
     model.eval()
 
+    if 'visual' in what:
+        visual_inspection(device, model, multiscale_roi_align, dataset)
+
+    if 'metrics' in what:
+        calc_metrics(device, model, multiscale_roi_align, dataset, dataloader, max_images)
+
+
+def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_images=4000):
     # Initialize the metrics
     map_metric = MeanAveragePrecision(class_metrics=True, extended_summary=True, iou_thresholds=[0.75])
 
-    confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes)+1)  # add background
+    confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes) + 1)  # add background
 
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
@@ -56,7 +64,8 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
         pred_boxes, pred_scores, _, sub_labels = infer(
             model, multiscale_roi_align, device, image_b, targets_b
         )
-        pred_boxes, pred_scores, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), sub_labels[0].detach().cpu()
+        pred_boxes, pred_scores, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), sub_labels[
+            0].detach().cpu()
 
         map_update(map_metric, gt_boxes, gt_labels, pred_boxes, pred_scores, sub_labels)
 
@@ -77,6 +86,12 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
 
     plot_per_class_metrics(results)
 
+    print("Computing confusion matrix...")
+
+    draw_confmat(confmat)
+
+
+def visual_inspection(device, model, multiscale_roi_align, dataset):
     while True:
 
         images_targets = [dataset[random.randint(0, len(dataset) - 1)] for _ in range(3)]
@@ -90,7 +105,3 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
 
         if answer not in ['y', '']:
             break
-
-    print("Computing confusion matrix...")
-
-    draw_confmat(confmat)
