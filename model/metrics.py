@@ -130,7 +130,7 @@ def plot_per_class_metrics(map_results):
     plt.show()
 
 
-def draw_confmat(confmat):
+def draw_confmat(confmat, filename):
     # Get the confusion matrix
     conf_matrix = confmat.compute().numpy()
 
@@ -151,7 +151,7 @@ def draw_confmat(confmat):
     plt.title("Confusion Matrix")
 
     # Save without displaying
-    plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.savefig(filename, dpi=300, bbox_inches='tight')
     plt.close()
 
     print("Confusion matrix saved.")

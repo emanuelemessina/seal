@@ -50,6 +50,7 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
     map_metric = MeanAveragePrecision(class_metrics=True, extended_summary=True, iou_thresholds=[0.75])
 
     confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes) + 1)  # add background
+    super_confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.radical_groups) + 1)  # add background
 
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
@@ -59,17 +60,19 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
 
         gt_boxes = targets["boxes"].detach().cpu()
         gt_labels = targets["labels"].detach().cpu()
+        gt_superlabels = targets["superlabels"].detach().cpu()
 
         # Get model predictions
-        pred_boxes, pred_scores, _, sub_labels = infer(
+        pred_boxes, pred_scores, super_labels, sub_labels = infer(
             model, multiscale_roi_align, device, image_b, targets_b
         )
-        pred_boxes, pred_scores, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), sub_labels[
+        pred_boxes, pred_scores, super_labels, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), super_labels[0], sub_labels[
             0].detach().cpu()
 
         map_update(map_metric, gt_boxes, gt_labels, pred_boxes, pred_scores, sub_labels)
 
         confmat_update(confmat, gt_boxes, gt_labels, pred_boxes, sub_labels)
+        confmat_update(super_confmat, gt_boxes, gt_superlabels, pred_boxes, super_labels)
 
         if max_images is not None and idx == max_images:
             break
@@ -79,8 +82,13 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
     # Compute mAP and extract precision-recall stats
     results = map_metric.compute()
 
-    print("mAP@0.75:", results["map"].item())
-    print("mAR:", results["mar_100"].item())
+    map = f"mAP@0.75: {results['map'].item()}"
+    mar = f"mAR: {results['mar_100'].item()}"
+    print(map)
+    print(mar)
+    with open("metrics.txt", "w") as f:
+        f.write(map+"\n")
+        f.write(mar+"\n")
 
     print("Plotting per-class metrics...")
 
@@ -88,7 +96,11 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
 
     print("Computing confusion matrix...")
 
-    draw_confmat(confmat)
+    draw_confmat(confmat, 'confusion_matrix.png')
+
+    print("Computing super confusion matrix...")
+
+    draw_confmat(super_confmat, 'super_confusion_matrix.png')
 
 
 def visual_inspection(device, model, multiscale_roi_align, dataset):
