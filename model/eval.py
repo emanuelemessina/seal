@@ -1,6 +1,7 @@
 import random
 
 import matplotlib.font_manager as fm
+import numpy as np
 import torch
 from matplotlib import pyplot as plt
 
@@ -29,9 +30,6 @@ def visualize_predictions(images, boxes, scores, super_labels, sub_labels, datas
 
 from torchmetrics.detection.mean_ap import MeanAveragePrecision
 from torchmetrics import ConfusionMatrix
-from collections import defaultdict
-import seaborn as sns
-
 
 def calculate_iou(box1, box2):
     # Intersection coordinates
@@ -92,7 +90,7 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
     model.eval()
 
     # Initialize the metric
-    map_metric = MeanAveragePrecision()
+    map_metric = MeanAveragePrecision(class_metrics=True, extended_summary=True, iou_thresholds=[0.75])
 
     BACKGROUND_CLASS = len(dataset.classes)  # background index
 
@@ -150,24 +148,65 @@ def evaluate(device, model, multiscale_roi_align, dataset, dataloader, checkpoin
             torch.tensor(target_classes)
         )
 
-        if idx == 200:
+        if idx == 10:
             break
+
+    print("Computing mAP...")
 
     # Compute mAP and extract precision-recall stats
     results = map_metric.compute()
-    print("Final mAP:", results["map"].item())
+    print("mAP@0.75:", results["map"].item())
+
+    mar_100_per_class = [max(0, val) for val in results['mar_100_per_class'].tolist()]
+    map_per_class = [max(0, val) for val in results['map_per_class'].tolist()]
+    classes = results['classes'].tolist()
+    x = np.arange(len(classes))  # the label locations
+    width = 0.35  # the width of the bars
+
+    fig, ax = plt.subplots(figsize=(12, 8))
+    rects1 = ax.bar(x - width / 2, mar_100_per_class, width, label='mAR')
+    rects2 = ax.bar(x + width / 2, map_per_class, width, label='mAP@0.75')
+
+    # Add some text for labels, title and custom x-axis tick labels, etc.
+    ax.set_xlabel('Classes')
+    ax.set_ylabel('Value')
+    ax.set_title('mAR and mAP per class')
+    ax.set_xticks([])
+    ax.set_xticklabels([])
+    ax.legend()
+
+    fig.tight_layout()
+
+    plt.show()
+
+    print("Computing confusion matrix...")
 
     # Get the confusion matrix
-    conf_matrix = confmat.compute()
+    conf_matrix = confmat.compute().numpy()
+
+    row_sums = conf_matrix.sum(axis=1, keepdims=True)
+    conf_matrix = np.divide(
+        conf_matrix, row_sums, out=np.zeros_like(conf_matrix, dtype=float), where=row_sums != 0
+    )
 
     # Plot the confusion matrix as a heatmap
 
-    plt.figure(figsize=(10, 8))
-    sns.heatmap(conf_matrix.int().cpu(), annot=True, fmt="d", cmap="Blues")
-    plt.xlabel('Predicted Labels')
-    plt.ylabel('True Labels')
-    plt.title('Confusion Matrix')
-    plt.show()
+    print("Writing confusion matrix...")
+
+    plt.figure(figsize=(12, 10))  # Set larger figure size for better resolution
+    plt.imshow(conf_matrix, cmap="Blues")
+    plt.colorbar()
+
+    # Add axis labels and ticks
+    plt.xlabel("Predicted Labels")
+    plt.ylabel("True Labels")
+    plt.title("Confusion Matrix")
+
+    # Save without displaying
+    plt.savefig('confusion_matrix.png', dpi=300, bbox_inches='tight')
+    plt.close()
+
+    print("Confusion matrix saved.")
 
     while True:
 
