@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from dataset.dataset import get_all_characters
 
 DATASET_NAME = "seal2061"

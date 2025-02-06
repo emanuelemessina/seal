@@ -100,11 +100,11 @@ class CustomPredictor(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels, in_channels, kernel_size=2, padding=1),  # same 6x6
             nn.ReLU(),
-            nn.AdaptiveAvgPool2d(3),  # pool 3x3
+            nn.AdaptiveAvgPool2d(3),  # pool 3x3 -> x super
         )
 
         self.superclassifier_head = nn.Sequential(
-            nn.Flatten(start_dim=1),
+            nn.Flatten(start_dim=1), # x super
             nn.Linear(in_channels*3*3, 1024),
             nn.ReLU(),
             nn.Linear(1024, num_superclasses)  # super logits

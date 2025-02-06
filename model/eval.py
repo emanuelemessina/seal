@@ -50,7 +50,7 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
     map_metric = MeanAveragePrecision(class_metrics=True, extended_summary=True, iou_thresholds=[0.75])
 
     confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.classes) + 1)  # add background
-    super_confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.radical_groups) + 1)  # add background
+    super_confmat = ConfusionMatrix(task="multiclass", num_classes=len(dataset.radical_labels) + 1)  # add background
 
     for idx, (image_b, targets_b) in enumerate(dataloader):
         print(f'Evaluating image {idx + 1}/{len(dataloader)}...')
