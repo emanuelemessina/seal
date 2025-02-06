@@ -53,7 +53,7 @@ class CustomRoIAlign(MultiScaleRoIAlign):
         return super().forward(x, boxes, image_shapes)
 
 
-roi_output_size = 7
+roi_output_size = 8
 featmap_names = ["0", "1"]
 roi_sampling_ratio = 2
 
@@ -80,58 +80,66 @@ class CustomPredictor(nn.Module):
         self.device = device
         self.disable_hc = disable_hc
 
-        self.box_distancer = nn.Sequential(nn.Linear(in_lin_features, funneled_dim), nn.ReLU(), nn.Linear(funneled_dim, funneled_dim))
+        self.box_distancer = nn.Sequential(nn.Linear(in_lin_features, 4096), nn.ReLU(), nn.Linear(4096, funneled_dim))
         self.cls_score_dummy = nn.Linear(funneled_dim, 2)
         self.bbox_pred = nn.Linear(funneled_dim, 2 * 4)  # hardcoded 2 classes (obj/bgd)
 
         self.super_logits = torch.empty(0)
         self.sub_logits = torch.empty(0)
 
-        self.superclassifier = nn.Sequential(  # in_channels > num_superclasses
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 7x7
+        self.superclassifier_funnel = nn.Sequential(  # in_channels > num_superclasses
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 8x8
             nn.ReLU(),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 7x7
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 8x8
             nn.ReLU(),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3),  # shrink 5x5
+            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 8x8
             nn.ReLU(),
-            nn.Conv2d(in_channels, in_channels, kernel_size=3, padding=1),  # same 5x5
+            nn.Conv2d(in_channels, in_channels, kernel_size=3),  # shrink 6x6
+            nn.ReLU(),
+            nn.Conv2d(in_channels, in_channels, kernel_size=2, padding=1),  # same 6x6
+            nn.ReLU(),
+            nn.Conv2d(in_channels, in_channels, kernel_size=2, padding=1),  # same 6x6
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(3),  # pool 3x3
-            nn.Conv2d(in_channels, num_superclasses, kernel_size=1),  # squash channels 3x3xradicals
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),  # pool 1x1
-            nn.Conv2d(num_superclasses, num_superclasses, kernel_size=1),  # dense like 1x1 -> logits
         )
 
-        subclassifier_channels = 2048
+        self.superclassifier_head = nn.Sequential(
+            nn.Flatten(start_dim=1),
+            nn.Linear(in_channels*3*3, 1024),
+            nn.ReLU(),
+            nn.Linear(1024, num_superclasses)  # super logits
+        )
 
         self.subclassifier_funnel = nn.Sequential(
-            nn.Conv2d(in_channels, 512, kernel_size=3, padding=1),  # same 7x7, expand channels
+            nn.Conv2d(in_channels, 512, kernel_size=3, padding=1),  # same 8x8, expand channels
             nn.ReLU(),
-            nn.Conv2d(512, 512, kernel_size=3, padding=1),  # same 7x7
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),  # same 8x8
             nn.ReLU(),
-            nn.Conv2d(512, 1024, kernel_size=3),  # 5x5 expand channels
+            nn.Conv2d(512, 512, kernel_size=3, padding=1),  # same 8x8
             nn.ReLU(),
-            nn.Conv2d(1024, 1024, kernel_size=3, padding=1),  # same 5x5
+            nn.Conv2d(512, 1024, kernel_size=3),  # shrink 6x6 expand channels
+            nn.ReLU(),
+            nn.Conv2d(1024, 1024, kernel_size=2, padding=1),  # same 6x6
+            nn.ReLU(),
+            nn.Conv2d(1024, 1024, kernel_size=2, padding=1),  # same 6x6
             nn.ReLU(),
             nn.AdaptiveAvgPool2d(3),  # pool 3x3
-            nn.Conv2d(1024, subclassifier_channels, kernel_size=1),  # same 3x3, expand channels
-            nn.ReLU(),
-            nn.AdaptiveAvgPool2d(1),  # pool 1x1
         )
 
-        subcl_junc_chans = (num_superclasses if not disable_hc else 0) + subclassifier_channels
+        subcl_junc_chans = (in_channels if not disable_hc else 0) + 1024
 
         self.subclassifier_junction = nn.Sequential(
-            nn.Conv2d(subcl_junc_chans, subcl_junc_chans, kernel_size=1),  # dense like 1x1 + super logits
+            nn.Conv2d(subcl_junc_chans, subcl_junc_chans, kernel_size=1),  # dense like 1x1 + super
             nn.ReLU(),
             nn.Conv2d(subcl_junc_chans, subcl_junc_chans, kernel_size=1),  # again
             nn.ReLU(),
-            nn.Flatten(start_dim=1)  # to subcls
+            nn.Flatten(start_dim=1),
+            nn.Linear(subcl_junc_chans*3*3, 2048),
+            nn.ReLU()
         )
 
         # subclasses per group 300
-        self.sub_classifiers = nn.ModuleList([nn.Linear(subcl_junc_chans, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
+        self.sub_classifiers = nn.ModuleList([nn.Linear(2048, superclasses_groups[i][1]) for i in range(len(superclasses_groups))])
 
     def forward(self, x):
         x_flat = x.flatten(start_dim=1)
@@ -143,9 +151,9 @@ class CustomPredictor(nn.Module):
         return scores, bbox_deltas
 
     def custom_forward(self, x):
-        # predict superclasses
-        x_super = self.superclassifier(x)
-        self.super_logits = x_super.flatten(start_dim=1)
+
+        x_super = self.superclassifier_funnel(x)
+        self.super_logits = self.superclassifier_head(x_super)
 
         x_sub = self.subclassifier_funnel(x)
 
