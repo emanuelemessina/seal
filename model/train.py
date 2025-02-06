@@ -26,17 +26,11 @@ def train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, 
 
     torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=10)
 
-    ''' linear model
     lr = 0.001
     optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=0.0001)
     iterations_per_epoch = (len(dataset) + batch_size - 1) // batch_size
     # scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=iterations_per_epoch, T_mult=2, eta_min=0.0001)
-    scheduler = StepLR(optimizer, step_size=1, gamma=0.1)
-    '''
-    # conv model
-    lr = 0.01
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.01, weight_decay=0.0001)
-    scheduler = None
+    scheduler = StepLR(optimizer, step_size=1, gamma=0.8)
 
     load_checkpoint(checkpoint_path, discard_optim, model, optimizer, scheduler)
 
@@ -168,7 +162,7 @@ def train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, 
                 log(f"Saved checkpoint {checkpoint_name}")
 
             #scheduler.step(epoch + batch_idx / iterations_per_epoch)
-        if scheduler:
+        if scheduler is not None:
             scheduler.step()
             log(f"lr: {scheduler.get_last_lr()}")
 
