@@ -11,6 +11,7 @@ checkpoint*
 yolo/runs*
 yolo/yolo*.pt
 model/saves
+*.zip
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
