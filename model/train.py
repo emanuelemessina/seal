@@ -60,7 +60,7 @@ def train(device, model, multiscale_roi_align, dataset, dataloader, batch_size, 
     log(f'Started training {date_time}')
     log(f'lr: {lr}')
 
-    num_epochs = 10
+    num_epochs = 6
     for epoch in range(num_epochs):
 
         log(f'Epoch {epoch} ...')
