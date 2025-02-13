@@ -1,0 +1,45 @@
+PAPER MILESTONES:
+
+ Abstract (not more than 300 words)
+ Introduction (15%)
+ Data (15%)
+ Methods (30%)
+ Experiments (30%)
+ Conclusion (10%)
+ References
+
+PAPER FEATURES:
+
+link to dataset in the paper
+A motivation is given for why the datasets used were selected
+A link to the dataset(s) is included in the paper
+Any code required for pre-processing the data is included in the code 
+The paper specifies how the dataset was split into a training, validation and test set
+Online (or, if unfeasible, offline) data augmentation was used in the experiments
+All sources used to design/implement the proposed solution are referenced in the paper
+Results are evaluated on an independent test set, not used during training
+Hyper-parameters are reported for all experiments discussed in the paper
+The paper states the number and range of values tried per (hyper-) parameter during development of the paper, along with the criterion used for selecting the final parameter setting
+Appropriate quantitative performance metrics are defined and used to report the results
+A few qualitative examples are included in the report (if feasible)
+Potential failure cases are discussed
+All figures and tables are readable with clear fonts
+All figures  have clearly labeled axis
+All figures and tables have captions that describe their contents
+images with readable fonts and axis and captions
+
+review self assessment
+
+FINAL MATERIAL:
+
+The following content must be provided
+ The project code/notebooks
+ The weights of a trained model
+ A copy or link to the dataset, if not publicly
+available
+ A 6-8 pages paper that describes the application,
+machine learning techniques, hyper-parameters,
+dataset, performance metrics and results
+ The self-assessment checklist
+ (optional) Experiment log
+ (optional) Supplementary material
