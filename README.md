@@ -14,7 +14,13 @@ cd model
 python launch.py [options...]
 ```
 
-## Credits
+## Dataset
+
+The model was trained on [SEAL 5864](https://www.kaggle.com/datasets/emanuelemessina/seal-5684/data).
+
+This repo also contains the dataset generation code for "SEAL _N_".
+
+### Credits
 
 - Fonts from:
   - freefonts.top

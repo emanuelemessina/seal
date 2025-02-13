@@ -1,6 +1,16 @@
 \section{Introduction}
 \label{sec:introduction}
 
-TODO:
- - talk about problem,  what is it, why we do it, a bit of history/ how it works, why we want to use hierarchical classification
- 
+Seal script \cite{WikipediaSealScript} is an ancient style of Chinese writing that dates back over 2000 years. It represents a critical stage in the evolution of Chinese characters, serving as the foundation for modern script forms. Despite its historical origins, seal script remains widely used today (mostly for decorative purposes) in official seals \cite{WikipediaSeals}, calligraphy, and cultural artifacts such as inscriptions, stone carvings, and historical documents.
+Automatic seal script recognition is valuable for historical research, digital preservation, and modern applications like seal authentication and design. However, its unique structure and stylistic variations make it challenging for conventional OCR systems, requiring specialized approaches.
+
+Given the vast number of classical chinese characters (more than 40k), and due to our limited resources, we aimed to develop a model capable of recognizing approximately the same number of characters used in modern chinese (around 5k). This number is far beyond the typical number of classes (e.g. ImageNet-1k) used in standard object recognition. A conventional classifier would struggle with this task, as it would require an extremely large feature space to differentiate thousands of characters independently.
+
+To address this, we leveraged the intrinsic hierarchical structure of Chinese characters, which consist of a radical and a remaining component. We designed a deep hierarchical classifier where a shared feature tensor is used by both a radical classifier and multiple radical-specific classifier heads. Ideally, each head is responsible for distinguishing characters within a single radical category, utilizing both the shared feature tensor and the radical classification results. This structure significantly reduces the required feature space while allowing for a combinatorial increase in the number of recognizable classes.
+
+Compared to a standard (non hierarchical) version of our model (where the upper radical classifier was disabled), which collapses under this task, our hierarchical approach maintains feasible training and inference times while achieving a reasonable classification and localization performance for a minor increase in size (due to the added radical classifier).
+
+To recognize seal script characters, we first needed a dataset, as - to our knowledge - no existing model or dataset was available, at least publicly. Thus we had to invent our own: \href{https://www.kaggle.com/datasets/emanuelemessina/seal-5684/data}{SEAL 5684}.
+
+
+

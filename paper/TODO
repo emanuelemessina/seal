@@ -1,6 +1,5 @@
 PAPER MILESTONES:
 
- Abstract (not more than 300 words)
  Introduction (15%)
  Data (15%)
  Methods (30%)
@@ -10,9 +9,6 @@ PAPER MILESTONES:
 
 PAPER FEATURES:
 
-link to dataset in the paper
-A motivation is given for why the datasets used were selected
-A link to the dataset(s) is included in the paper
 Any code required for pre-processing the data is included in the code 
 The paper specifies how the dataset was split into a training, validation and test set
 Online (or, if unfeasible, offline) data augmentation was used in the experiments
