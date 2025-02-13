@@ -8,6 +8,9 @@ model/log*.txt
 model/loss*
 *.rar
 checkpoint*
+yolo/runs*
+yolo/yolo*.pt
+model/saves
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
