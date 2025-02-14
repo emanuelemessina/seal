@@ -24,7 +24,7 @@ parser.add_argument('--force_cpu', type=bool, default=False, help='Force to use 
 parser.add_argument('--discard_optim', type=bool, default=False, help='Discard optim state dict')
 parser.add_argument('--disable_hc', type=bool, default=False, help='Disable hierachical classification')
 parser.add_argument('--visual_inspect', type=bool, default=True, help='Visualize model predictions')
-parser.add_argument('--calc_metrics', type=bool, default=True, help='Calculate performance metrics')
+parser.add_argument('--calc_metrics', type=bool, default=False, help='Calculate performance metrics')
 
 args = parser.parse_args()
 

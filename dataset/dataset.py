@@ -2,6 +2,7 @@ import os
 import sqlite3
 from enum import Enum
 import torch
+from isapi.install import split_path
 from torch.utils.data import Dataset
 from PIL import Image
 import pandas as pd
@@ -65,9 +66,9 @@ def group_radical_counts(radical_counts, threshold):
 
 
 def load_weights(data_folder, what):
-    if what == 'radicals':
+    if what == "radicals":
         what = "radical_stats.csv"
-    elif what == 'chars':
+    elif what == "chars":
         what = "character_stats.csv"
     else:
         raise ValueError
@@ -78,33 +79,41 @@ def load_weights(data_folder, what):
 
 
 def load_image_mean_std(data_folder):
-    with open(os.path.join(data_folder, "image_stats.txt"), 'r') as f:
+    with open(os.path.join(data_folder, "image_stats.txt"), "r") as f:
         lines = f.readlines()
-        mean = torch.tensor(eval(lines[0].split('mean ')[1].strip()))
-        std = torch.tensor(eval(lines[1].split('std ')[1].strip()))
+        mean = torch.tensor(eval(lines[0].split("mean ")[1].strip()))
+        std = torch.tensor(eval(lines[1].split("std ")[1].strip()))
 
         return mean, std
 
 
 class CharacterDataset(Dataset):
-    def __init__(self, data_folder, split='train', transform=None):
+    def __init__(self, data_folder, split="train", transform=None):
         self.split_folder = os.path.join(data_folder, split)
         self.transform = transform
 
-        self.image_files = [f for f in os.listdir(os.path.join(self.split_folder, "images")) if f.endswith('.png')]
+        self.image_files = [
+            f
+            for f in os.listdir(os.path.join(self.split_folder, "images"))
+            if f.endswith(".png")
+        ]
 
         self.classes = get_all_characters()
 
         self.labels = {self.classes[idx]: idx for idx in range(len(self.classes))}
 
         self.radical_counts = get_radical_character_counts()
-        self.radical_labels = {self.radical_counts[i][0]: i for i in range(len(self.radical_counts))}
-        self.radical_groups = group_radical_counts(self.radical_counts, self.radical_counts[0][1])
+        self.radical_labels = {
+            self.radical_counts[i][0]: i for i in range(len(self.radical_counts))
+        }
+        self.radical_groups = group_radical_counts(
+            self.radical_counts, self.radical_counts[0][1]
+        )
 
         self.mean, self.std = load_image_mean_std(data_folder)
-        if split == 'train':
-            self.class_weights = load_weights(self.split_folder, 'chars')
-            self.superclass_weights = load_weights(self.split_folder, 'radicals')
+        if split == "train":
+            self.class_weights = load_weights(self.split_folder, "chars")
+            self.superclass_weights = load_weights(self.split_folder, "radicals")
 
     def __len__(self):
         return len(self.image_files)
@@ -118,31 +127,38 @@ class CharacterDataset(Dataset):
         image = Image.open(img_path).convert("RGB")
 
         # Get label file
-        label_name = img_name.replace('.png', '.txt')
+        label_name = img_name.replace(".png", ".txt")
         label_path = os.path.join(self.split_folder, "labels", label_name)
 
         # Parse labels
         boxes = []
         labels = []
         superlabels = []
-        with open(label_path, 'r', encoding='utf-8') as f:
-            for line in f:
-                parts = line.strip().split()
-                char = parts[0]
-                x_min, y_min, x_max, y_max = map(float, parts[1:5])
-                radical = parts[5]
-                font_file = parts[6]
-                boxes.append([x_min, y_min, x_max, y_max])
 
-                labels.append(self.labels[char])
-                superlabels.append(self.radical_labels[radical])
+        if 'real_world' not in self.split_folder:  # skip labels for real world images
+            with open(label_path, "r", encoding="utf-8") as f:
+                for line in f:
+                    parts = line.strip().split()
+                    char = parts[0]
+                    x_min, y_min, x_max, y_max = map(float, parts[1:5])
+                    radical = parts[5]
+                    font_file = parts[6]
+                    boxes.append([x_min, y_min, x_max, y_max])
+
+                    labels.append(self.labels[char])
+                    superlabels.append(self.radical_labels[radical])
 
         # Convert to tensors
         boxes = torch.as_tensor(boxes, dtype=torch.float32)
         labels = torch.as_tensor(labels, dtype=torch.int64)
         superlabels = torch.as_tensor(superlabels, dtype=torch.int64)
 
-        target = {"boxes": boxes, "labels": labels, "superlabels": superlabels}
+        target = {
+            "boxes": boxes,
+            "labels": labels,
+            "superlabels": superlabels,
+            "img_name": img_name,
+        }
 
         # Apply transformations
         if self.transform:

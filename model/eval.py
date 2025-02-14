@@ -18,12 +18,13 @@ from metrics import map_update
 fprop = fm.FontProperties(fname='C:\Windows\Fonts\msjhl.ttc')
 
 
-def visualize_predictions(images, boxes, scores, super_labels, sub_labels, dataset):
+def visualize_predictions(images, targets, boxes, scores, super_labels, sub_labels, dataset):
     fig, axes = plt.subplots(1, len(images), figsize=(15, 5))
-    for ax, image, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, boxes, scores, super_labels,
+    for ax, image, im_targets, im_boxes, im_scores, im_superlabels, im_sublabels in zip(axes, images, targets, boxes, scores, super_labels,
                                                                             sub_labels):
         ax.imshow(T.ToPILImage()(image))
         im_boxes = im_boxes.detach().cpu()
+        ax.text(5, 5, f"{im_targets['img_name']}", color='red')
         for box, score, superlabel, sublabel in zip(im_boxes, im_scores, im_superlabels, im_sublabels):
             x1, y1, x2, y2 = box
             ax.add_patch(plt.Rectangle((x1, y1), x2 - x1, y2 - y1,
@@ -66,8 +67,8 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
         pred_boxes, pred_scores, super_labels, sub_labels = infer(
             model, multiscale_roi_align, device, image_b, targets_b
         )
-        pred_boxes, pred_scores, super_labels, sub_labels = pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), super_labels[0], sub_labels[
-            0].detach().cpu()
+        pred_boxes, pred_scores, super_labels, sub_labels = (
+            pred_boxes[0].detach().cpu(), torch.tensor(pred_scores[0]), super_labels[0], sub_labels[0].detach().cpu())
 
         map_update(map_metric, gt_boxes, gt_labels, pred_boxes, pred_scores, sub_labels)
 
@@ -106,12 +107,13 @@ def calc_metrics(device, model, multiscale_roi_align, dataset, dataloader,  max_
 def visual_inspection(device, model, multiscale_roi_align, dataset):
     while True:
 
-        images_targets = [dataset[random.randint(0, len(dataset) - 1)] for _ in range(3)]
+        is_real_world = "real_world" in dataset.split_folder
+        images_targets = [dataset[random.randint(0, len(dataset) - 1)] for _ in range(2 if is_real_world else 3)]
         images, targets = zip(*images_targets)
 
         pred_boxes, pred_scores, super_labels, sub_labels = infer(model, multiscale_roi_align, device, images, targets)
 
-        visualize_predictions(images, pred_boxes, pred_scores, super_labels, sub_labels, dataset)
+        visualize_predictions(images, targets, pred_boxes, pred_scores, super_labels, sub_labels, dataset)
 
         answer = input("Do you want to see other images? (y/n, default is y): ").strip().lower()
 
