@@ -7,12 +7,16 @@
 pip install -r requirements.txt
 ```
 
-## Train
+## Launch
+
+To train or evaluate the model:
 
 ```
 cd model
 python launch.py [options...]
 ```
+
+Check `launch.py` or call it with `--help` to inspect the available options.
 
 ## Dataset
 

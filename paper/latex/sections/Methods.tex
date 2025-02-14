@@ -1,9 +1,40 @@
 \section{Methods}
 \label{sec:methods}
 
-TODO:
+\subsection{Model Design}
+\label{sec:model}
 
+\subsubsection{Base model}
 
-- talk about the model, we used fasterrcnn cuz its easy to customize, and also we conjecture 2 stage is better than single shot (see yolo results)
-- show how fasterrcnn works and why it doesn't work for use, how we solved the problem for 5k classes
-- explain custom model, loss, class weights
+Given the high number of classes and the detailed features needed to distinguish one character from another, we hypothesized that single-shot detection models (e.g., YOLO) would not be ideal. Unlike standard object detection, which deals with diverse objects in color, shape, and size, our task required fine-grained recognition within a large class space. A two stage recognition has a separate classification stage that operates on (ideally) the feature map crop that contains the entire object of interest, while a single shot method could crop important parts of a character due to the fixed grid structure, and by using a coarser grid it risks getting too many character parts in the same cell, making the character learning process difficult. While we can't prove this conjecture in general, as we will see in the results section our two-stage model did actually perform better than YOLO, but we believe the main reason is our radical enhanced classification advantage more than the detection method used.
+Moreover, to build our hierarchical model, we needed a flexible framework that allowed modifications without rewriting everything from scratch (as we should have done if we opted for a single stage method). We chose Faster R-CNN with a ResNet-50-FPN backbone as our base model. We kept the backbone intact and developed a custom head after the multi-scale ROI Align layer.
+
+\subsubsection{Custom head}
+
+The original implementation of Faster R-CNN assigns a box regressor per class, which is impractical for thousands of classes, but more importantly unnecessary for our task. Instead, we used a single box regressor and a binary classifier (character vs background). Their task is to understand the idea of a character (how it generally looks like) and anything else that is not a character, withoud knowing which specific character it is. The reasons why we didn't use a single box regressor but a multiclass classifier are multiple. First, we noticed there is a sort of limit in the RPN code before it breaks, depending on the number of classes. Second, the binary classifier works together with the box regressor, so it makes sense to keep the task simple for them, and that is also why we'll see that the localization accuracy is near perfect and independent from the character classification accuracy (compared to the custom classifier, they have much more data for their simple task).
+
+The feature tensor from the multiscale ROI align layer is shared between two branches: one goes to the box regressor + binary classifier combo (linear layers), the other goes to our custom classifier (convolutional).
+
+\subsubsection{Hierarchical classifier}
+
+The feature tensor is shared again between two branches: one goes to the radical funnel (a convolutional feature extractor), the other goes to the character funnel (another convolutional feature extractor).
+The radical classifier is then just a couple of linear layers after the radical funnel, and tries to classify the radical of a character.
+The features extracted by the radical funnel (just before the actual radical classifier layers) are then concatenated with those extracted by the character funnel. The new fat tensor, that now contains both generic character features and specific radical information, is processed by a fusion layer (made of 1x1 convolutions) before being shared among all the radical-specific subclassifier heads. The idea is that each subclassifier head handles the classification of characters (the subclasses) beloging to one radical (the superclass). In practice, since the radical distribution in highly imbalanced (\ref{img:radicals_distribution}), we automatically grouped less frequent radicals together so that each subclassifier has to classify more or less the same number of characters. This allows also for a more generalized development. A subclassifier is just a single linear layer that classifies its speficic group of characters directly from the fat tensor.
+When we refer to the non hierarchical version of our model, we mean that the subclassifiers receive just the general character features, not the fat tensor, because the radical features do not get concatenated.
+
+\img{SEAL}{1\linewidth}{SEAL (our model) architecture.}
+
+\subsection{Loss}
+
+We preserved Faster R-CNN’s original loss for the binary classifier (character vs. background) + box regressor, as they contain separate information from our classification stage.
+We separately computed radical classification loss and character classification loss (by concatenating the logits of all subclassifiers), using weighted Cross Entropy losses. These losses were weighted differently to balance the priority of each task:
+
+\[
+    L = L_f + \lambda_r L_r + \lambda_c L_c
+\]
+
+where $L$ is the final loss we optimize, $L_f$ is Faster RCNN's original loss computed on the box regressor + binary classifier outputs, $L_r$ is the radical loss and $L_c$ the character loss.
+
+\subsection{Training adjustments}
+
+Since the hierarchical classifier has to learn a much more complex task than the box regressor, we wanted to make sure it receives the correct ROI features for each character during training, so we take the FPN feature maps and perform the ROI align on the ground truth boxes, then feed the ROIs to the classifier. During inference, we use the RPN generated features as usual.

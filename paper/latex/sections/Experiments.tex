@@ -1,11 +1,80 @@
 \section{Experiments}
 \label{sec:experiments}
 
-TODO:
+\subsection{Early design and challenges}
 
-- tell about linear model, distance from features,  725 - 2061 - 5684, regressor vs classifier, adam fails, lr, scheduler, anchors, epochs
+Initially, our model’s classifier was fully linear after ROI Align, making it bulky, slow, and inefficient. However, this simplified architecture allowed us to verify our hierarchical classification concept. During early experiments, we observed that the custom classifier gradients conflicted with the box regressor ones. Since both components shared the same feature tensor but aimed to learn different tasks, their optimization paths interfered, leading to unstable regression loss.
 
+To solve this, we introduced additional distancing layers between the ROI features and each of the following stages. These layers acted as a low-pass filter for features, allowing the ROI features to remain general at first before progressively specializing. These layers evolved into the funnel structures seen in our final architecture (\ref{img:SEAL}).
 
+\subsection{Preliminary experiments}
 
-For our initial tests of the mode, we used reduced versions of our dataset based on the first 1k and then 3k most frequent characters according to a classical chinese corpus frequency list, before moving to the complete set.
+Before training on the full dataset, we tested reduced versions with 725 and 2061 classes, pruning the characters dabatase based on a classical Chinese corpus frequency list, since we initially feared the model would not converge at all. However, it did, even without the use of hierarchical classification, suggesting that the latent space had enough capacity for that class count.
+Encouraged by this result, we moved to the full dataset (almost three times larger then the last used provisory one), where we could appreciate the advantage of the hierarchical classification, which became evident: the hierarchical model converged, while the non-hierarchical version completely collapsed when trained from scratch.
+This validated our hypothesis that hierarchical classification was a valid option for handling thousands of characters effectively.
+
+\subsection{Optimizer selection}
+
+Initially, we experimented with Adam, hoping its adaptive learning rates and momentum tracking would help the different terminal parts of the model learn their respective tasks better. However, training was unstable, with losses skyrocketing, even with gradient clipping (that we kept on with max norm of 10 from that moment on).
+
+Switching to SGD with momentum 0.9 and weight decay 0.0001 proved significantly more stable and eventually provided good results for the final model. After tuning learning rates between 0.01 and 0.001, we found 0.001 to be optimal.
+
+To further stabilize training, we applied a StepLR scheduler after every epoch, testing different decay factors from 0.1 up. A gamma of 0.8 provided the steadiest loss descent.
+
+\subsection{Training strategy}
+
+The batch size was 2 for every test, as it is normal for a two stage model, considering that for every image there are on average 3 characters, and the number of proposals from the RPN is several hundreds per image. The model was trained for 6 epochs. It is worth noting that the linear model took 3 epochs before reaching its limit, with worse results (roughly 10\% less mAP than our final model, and being 3 times heavier).
+
+\subsection{Loss coefficients}
+
+Given the previous issues with regression vs classification conflicts, we gave the highest priority to the Faster R-CNN's built in loss (box regression + binary classifier) by assigning a coefficient of 1.
+Second in priority we put the radical classification, since it predicts the high level classes on which the subclassifiers depend, with a coefficient of 0.99 ($\lambda_r$).
+Since the correctness of every subclassifier head is highly dependent on the correctness of the radical classifier, we gave it a coefficient of 0.95 ($\lambda_c$) to give more priority to the radical classification.
+
+\subsection{Architecture details}
+
+We use 8x8 ROI maps (with 256 channels returned by ResNet), aligned from just the 8x and 16x downsampled feature maps (P2 and P3 layers) of FPN (for 256x256 images they correspond to 32x32 and 16x16 feature map sizes). We chose these feature maps based on the known size of the characters (from 40 to 80px) in the images. P4 and P5 (32x and 64x) are more indicated for larger objects and this is not our case.
+For the anchors we use sizes 50 and 70 px with 1:1 (square) and 2:1 (vertical) aspect ratios, resembling the shapes of the characters.
+
+For the final convolutional model, all the details are reported in the architecture diagram (\ref{img:SEAL}).
+
+The idea for the funnels is to try to extract more task specific features from the shared ROI features to help the later stages and avoid backpropagation conflicts, using same convolutions to avoid reducing the map size and expanding the channels in the character funnel. We don't expand the channels in the radical funnel since we deemed them sufficient for the number of radicals present. The final number of channels for the character features is 1024 with a final map of 3x3, which compared to the number of classes, would seem pretty low if hierarchical classification was not used, even when concatenated with the radical features, reaching only 1280 channels. Before going into the subclassification heads, the fat tensor goes through a couple of 1x1 convolutions to provide a touch of spatial information exchange between the character features and the radical features. The model has 145M parameters and weighs 1GB.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|c|}
+        \hline
+        \textbf{Hyperparameter}    & \textbf{Value} \\ \hline
+        Optimizer                  & SGD            \\ \hline
+        \quad Momentum             & 0.9            \\ \hline
+        \quad Weight Decay         & 0.0001         \\ \hline
+        Learning Rate              & 0.001          \\ \hline
+        Learning Rate Scheduler    & StepLR         \\ \hline
+        \quad Gamma                & 0.8            \\ \hline
+        Gradient Clipping Max Norm & 10             \\ \hline
+        Batch Size                 & 2              \\ \hline
+        Epochs                     & 6              \\ \hline
+        $\lambda_r$                & 0.99           \\ \hline
+        $\lambda_c$                & 0.95           \\ \hline
+    \end{tabular}
+    \caption{Summary of training hyperparameters}
+    \label{tab:hyperparameters}
+\end{table}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|l|c|}
+        \hline
+        \textbf{Property}    & \textbf{Value}    \\ \hline
+        ROI Map Size         & 8x8               \\ \hline
+        ROI sampling ratio   & 2                 \\ \hline
+        Feature Maps         & P2 (8x), P3 (16x) \\ \hline
+        Anchor Sizes         & 50, 70 px         \\ \hline
+        Anchor Aspect Ratios & 1:1, 2:1          \\ \hline
+        Model Parameters     & 145M              \\ \hline
+        Model Size           & 1GB               \\ \hline
+    \end{tabular}
+    \caption{Summary of model properties}
+    \label{tab:model_properties}
+\end{table}
 

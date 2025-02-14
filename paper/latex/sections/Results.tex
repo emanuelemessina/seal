@@ -1,7 +1,47 @@
 \section{Results}
 \label{sec:results}
 
-TODO:
+\subsection{Qualitative results}
+
+Qualitative results are best discussed directly in the images starting from 7, were we provided results over the test dataset and real world images (thus extracted from a different distribution than the one the model was trained on).
+We provide confusion matrices for both the hierarchical and non hierarchical version of our model, to show that while the hierarchical version succesfully understands the task, the non hierarchical version does not.
+
+\subsubsection{YOLO11x test}
+
+We trained YOLO11x (the biggest and most recent model currently available at the time of this study) for the same number of epochs. Training of YOLO has been made very simple nowadays by the developers, with the model being highly advanced and capable of setting its hyperparameters on the fly by doing a preliminary automated analysis on the dataset. There is no hard limit on the number of classes YOLO can be trained on, but the higher the classes the lower the performance will likely be \cite{UltralyticsIssue}. That is indeed the case for our test, where the confusion matrix is not even shown because it is just a white, empty square. Of course our test it is not exhaustive, as we didn't try to manually set every hyperparameter and did not allow the model to train longer than ours, but we believe this test proves a point nonetheless: probably the architecture of YOLO and similar single shot detectors is not suited for this speficic task.
+
+\subsection{Evaluation metrics}
+
+We provide the Mean Average Precision @ 0.75 IOU and the Mean Average Recall over the test split as evaluation metrics for our model. Since the localization accuracy is qualitatively really high, we fixed the IOU threshold as 0.75 when calculating the Mean Average Precision for each class. Essentially, in our case mAP is a strong indicator of classification performance. We followed the standard detection convetions when calculating mAP: a non matched predicted bounding box counted as a false positive; a non matched target box counted as false negative; a matched box with the wrong label is still a false positive, and a matched box with the correct label is a true positive. The Mean Average Recall is more meaningful as a metric for localization since it is worsened by the presence of false negatives, that in our case are rare due to the well behaving localization, and in fact we can see it is higher than the mAP, which is worsened by the character and radical classification mismatches, that raise the false positives count.
+
+\begin{table}
+    \centering
+    \begin{tabular}{|l|c|}
+        \hline
+        \textbf{Metric} & \textbf{Value} \\ \hline
+        mAP@0.75        & 0.57           \\ \hline
+        mAR             & 0.65           \\ \hline
+    \end{tabular}
+    \caption{Summary of evaluation metrics over the test dataset.}
+    \label{tab:metrics}
+\end{table}
 
 
-- results, losses, hc vs no hc, yolo
+\section{Future work}
+
+We are satisfied with the results given the experimental nature of this project. However, there is much to be improved. First of all, it would be appropriate to conduct an ablation study, for example in the case of the fusion stage, to verify its actual usefulness. Other tests to see if the accuracy can be improved are certainly in order, by adding or modifying the existing layers. Extensive experiments with other architectures would be interesting to confirm or dismiss the validity of hierarchical classification. This particular version of our model could be fine tuned with images containing characters of different colors, deteriorations, and different backgrounds, to see if it can generalize to be used in a real world scenario. Finally, we wonder if the knowledge of this model could be distilled into a smaller model with a straightforward classifier while maintaining accuracy.
+
+
+\img{conv_confmat}{\linewidth}{Confusion matrix (hierarchical) for characters, log scale, normalized. The expected diagonal is visible, indicating task accomplishment.}
+\img{conv_superconfmat}{\linewidth}{Confusion matrix (hierarchical) for radicals, log scale, normalized. The expected diagonal is visible, indicating that the radical classifier is working well.}
+\img{nohc_confmat}{\linewidth}{Confusion matrix (non-hierarchical) for characters, log scale, normalized. Not only there is no diagonal, but instead there is a complete collapse of the output distribution, indicating failure.}
+\img{nohc_superconfmat}{\linewidth}{Confusion matrix (non-hierarchical) for radicals, log scale, normalized. The expected diagonal is visible, indicating that the radical classifier is working well and it does not depend on the subclassifiers.}
+
+\img{eval_highlights}{\linewidth}{Some predictions from our model on the test set. Over each bounding box there are reported the confidence score the predicted character and the predicted radical. A red highlight indicates a mismatch in the prediction. Green indicates a correct prediction. Yellow indicates a prediction that is technically correct but there was a dataset error (a few fonts rendered some wrong characters) so it is wrong in the real world.}
+
+\img{yolo_targets}{\linewidth}{Some samples from YOLO11x training, that it had to predict, with the corresponding ground truth classes highlighted.}
+\img{yolo_preds}{\linewidth}{YOLO11x predictions for image \ref{img:yolo_targets}. Only one character is predicted, with low probability.}
+
+\img{em_seal_highlights}{\linewidth}{Image from a different distribution than what the model was trained on. The same highlighting convetion as in image \ref{img:eval_highlights} applies. The left image is artificial, we can see that the model is very accurate. The right image is a photograph of a print of the same characters in the left image, with a different style and deterioration. We can see that the character classification struggle with increasing deterioration while the radical classification is immune, suggesting the radical classifier generalized succesfully. In the character classifier defense, we can say that first, its task was much bigger, and second, the predicted characters are visually very similar to the ground truths, so it is not a disaster at least.}
+
+\img{shuowen_highlights}{\linewidth}{A real life image from the Shuowen Jiezi cover (which counts as yet a different distribution than what the model was trained on, since it never saw real life images). In this case an entire box was highlighted in red to indicate a false positive character presence. It is nice to see that even though the model was not exposed to modern character forms, it correctly localizes just the seal script characters in the center and not the modern forms on the side, except for the upper right red box. Among the four seal characters detected, the two green ones are correct (the yellow predicted radical is wrong, but in the model's defense, it is a visually reasonable mismatch), the red one is wrong, and the yellow one, although it is technically wrong, it is visually similar to the correct one, so we are still satisfied with the result for it being a first time ever.}
