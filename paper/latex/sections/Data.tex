@@ -1,8 +1,10 @@
 \section{Data}
 \label{sec:data}
 
-TODO:
+We based our dataset on the Kangxi Dictionary \cite{WikipediaKangxi}, one of the most comprehensive Chinese character dictionaries. It contains over 40000 characters, many of which are obscure or no longer in common use, so we first isolated characters that are included in the Unicode CJK set, reducing the dataset to 16000+ characters.
+Next, we identified 18 distinct fonts capable of rendering these characters in a seal script style. We then removed characters that could not be rendered by any of these fonts, leaving 13000+ characters, and further filtered out those represented by fewer than half of the available fonts. This ensured sufficient style variations for each character, ultimately resulting in 5684 characters for our dataset. To ensure a diverse dataset, we incorporated offline data augmentation, avoiding slowdowns during training, since the dataset had to be large anyway, due to the high number of classes. The use of different fonts was actually a type of augmentation itself. We generated synthetic images using 12 different backgrounds, with characters placed in radom sized vertical, square, and single arrangements, mimicking real-world usage in documents and seals. Each character underwent a random perspective deformation, and 2D rotation for added variation. Images were sized at 256×256 pixels, containing 1 to 7 characters per image.
+To estimate the number of images required, we used the coupon collector’s problem \cite{CouponCollectorProblem}, determining the necessary number of random draws to ensure all characters appeared at least once.
+Given an average of 3.5 characters per image, we rounded up our calculations to 35000 generated images. Since both the dataset and model were experimental, we prioritized convergence over extensive validation. We performed a simple $90\%-10\%$ split, generating 4,000 test images.
+For labeling, we created a custom annotation format tailored to our hierarchical model. Additionally, we generated a YOLO-compatible label set, which does not incorporate hierarchical classification. We computed the mean and standard deviation of the dataset to normalize inputs during training. Lastly, we analyzed the distribution of characters and radicals, finding a strong bias toward common radicals. To mitigate this imbalance, we calculated class weights for both radicals and individual characters, which were later used in a weighted cross-entropy loss function during training.
 
-- talk about dataset, how we constructed it, what it contains, the label structure, show distributions
-
-https://www.kaggle.com/datasets/emanuelemessina/seal-5684/data
+\img{train_samples}{0.5\linewidth}{samples from our dataset with the corresponding target character labels and bounding boxes overlayed. Radical auxiliary labels are not shown for clarity.}

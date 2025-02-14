@@ -1,7 +1,5 @@
 PAPER MILESTONES:
 
- Introduction (15%)
- Data (15%)
  Methods (30%)
  Experiments (30%)
  Conclusion (10%)
@@ -10,8 +8,8 @@ PAPER MILESTONES:
 PAPER FEATURES:
 
 Any code required for pre-processing the data is included in the code 
-The paper specifies how the dataset was split into a training, validation and test set
-Online (or, if unfeasible, offline) data augmentation was used in the experiments
+
+
 All sources used to design/implement the proposed solution are referenced in the paper
 Results are evaluated on an independent test set, not used during training
 Hyper-parameters are reported for all experiments discussed in the paper
@@ -19,6 +17,7 @@ The paper states the number and range of values tried per (hyper-) parameter dur
 Appropriate quantitative performance metrics are defined and used to report the results
 A few qualitative examples are included in the report (if feasible)
 Potential failure cases are discussed
+
 All figures and tables are readable with clear fonts
 All figures  have clearly labeled axis
 All figures and tables have captions that describe their contents

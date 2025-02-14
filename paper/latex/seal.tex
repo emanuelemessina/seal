@@ -7,6 +7,14 @@
 \usepackage{amsmath}
 \usepackage{amssymb}
 
+\newcommand{\img}[3]{
+	\begin{figure}[h]
+		\centering
+		\includegraphics[width=#2]{images/#1}
+		\caption{#3}\label{img:#1}
+	\end{figure}
+}
+
 % Include other packages here, before hyperref.
 
 % If you comment hyperref and then uncomment it, you should delete
@@ -16,16 +24,14 @@
 
 \cvprfinalcopy % *** Uncomment this line for the final submission
 
-\def\cvprPaperID{****} % *** Enter the CVPR Paper ID here
-\def\httilde{\mbox{\tt\raisebox{-.5ex}{\symbol{126}}}}
-
 \setcounter{page}{1}
+
 \begin{document}
 
 %%%%%%%%% TITLE
 \title{SEAL: Structured Encoder for Ancient Logograms}
-\date{2025}
 
+%%%%%%%%% AUTHORS
 \author{Emanuele Messina\\
 {\tt\small giuseppeemanuele.messina@studenti.polito.it}
 \and
