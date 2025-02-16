@@ -11,7 +11,7 @@ scikit-learn
 torchmetrics
 torchmetrics[detection]
 
---index-url https://download.pytorch.org/whl/cu126
+--extra-index-url https://download.pytorch.org/whl/cu126
 torch
 torchaudio
 torchvision
