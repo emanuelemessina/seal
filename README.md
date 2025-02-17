@@ -5,6 +5,7 @@
 
 ```
 pip install -r requirements.txt
+pip install -r req-torch.txt
 ```
 
 ## Launch

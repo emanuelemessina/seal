@@ -10,8 +10,3 @@ opencv-python
 scikit-learn
 torchmetrics
 torchmetrics[detection]
-
---extra-index-url https://download.pytorch.org/whl/cu126
-torch
-torchaudio
-torchvision
