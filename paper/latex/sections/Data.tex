@@ -7,8 +7,8 @@ To estimate the number of images required, we used the coupon collector’s prob
 Given an average of 3.5 characters per image, we rounded up our calculations to 35000 generated images. Since both the dataset and model were experimental, we prioritized convergence over extensive validation. We performed a simple $90\%-10\%$ split, generating 4,000 test images.
 For labeling, we created a custom annotation format tailored to our hierarchical model. Additionally, we generated a YOLO-compatible label set, which does not incorporate hierarchical classification. We computed the mean and standard deviation of the dataset to normalize inputs during training. Lastly, we analyzed the distribution of characters and radicals, finding a strong bias toward common radicals (\ref{img:radicals_distribution}). To mitigate this imbalance, we calculated class weights for both radicals and individual characters, which were later used in a weighted cross-entropy loss function during training, according to the following formula \cite{WeightsFormulaArticle}:
 \[
-    w_c = \frac{\sum_{i \in C, s \in S}{n^s_i}}{|C| n_c}
+    w_c = \frac{\sum_{i \in C}{n_i}}{|C| n_c}
 \]
-where $w_c$ is the weight assigned to class $c$, $C$ is the classes set and $|C|$ is the number of classes, $n_c$ is the absolute frequency of class $c$ over the whole dataset, $S$ is the dataset and $n^s_i$ is the frequency of class $i$ in sample $s$ (meaning the numerator is the total number of instances).
+where $w_c$ is the weight assigned to class $c$, $C$ is the classes set and $|C|$ is the number of classes, $n_c$ is the absolute frequency of class $c$ over the whole train set, and $n^_i$ is the absolute frequency of class $i$ in the whole train set (meaning the numerator is the total number of instances of all classes).
 
 \img{radicals_distribution}{\linewidth}{Radicals distribution over the train dataset. The dataset contains all 214 of them.}
