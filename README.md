@@ -1,6 +1,10 @@
 # SEAL
  Structured Encoder for Ancient Logograms
 
+[Paper](paper/latex/seal.pdf)
+
+[Presentation](paper/seal_presentation.pdf)
+
 ## Requirements
 
 ```
